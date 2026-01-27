@@ -3,6 +3,9 @@ __pycache__/
 .DS_Store
 .env
 venv/
+.venv/
 .vscode/
 .idea/
 *.log
+.pytest_cache/
+.ruff_cache/
