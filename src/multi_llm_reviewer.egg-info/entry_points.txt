@@ -1,3 +1,0 @@
-[console_scripts]
-llm-fix = src.cli.autofix:main
-llm-review = src.cli.review:main

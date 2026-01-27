@@ -9,3 +9,6 @@ venv/
 *.log
 .pytest_cache/
 .ruff_cache/
+build/
+dist/
+*.egg-info/
