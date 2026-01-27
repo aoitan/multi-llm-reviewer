@@ -10,6 +10,10 @@ dependencies = []
 pythonpath = ["."]
 testpaths = ["tests"]
 
+[project.scripts]
+review = "src.cli.review:main"
+autofix = "src.cli.autofix:main"
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
