@@ -1,5 +1,5 @@
 from unittest.mock import patch, MagicMock
-from src.core import llm_client
+from multi_llm_reviewer.core import llm_client
 import subprocess
 
 def test_is_rate_limit():

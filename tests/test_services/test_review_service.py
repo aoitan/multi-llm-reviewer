@@ -1,8 +1,8 @@
 from unittest.mock import patch
-from src.services import review_service
-from src.core import config
+from multi_llm_reviewer.services import review_service
+from multi_llm_reviewer.core import config
 
-@patch("src.core.git_utils.get_changed_files")
+@patch("multi_llm_reviewer.core.git_utils.get_changed_files")
 def test_decide_reviewers_auto_small(mock_get_files):
     # ファイル数が少ない場合 -> Single
     mock_get_files.return_value = ["README.md"]
@@ -10,7 +10,7 @@ def test_decide_reviewers_auto_small(mock_get_files):
     assert "Single" in log
     assert len(slots) == 1
 
-@patch("src.core.git_utils.get_changed_files")
+@patch("multi_llm_reviewer.core.git_utils.get_changed_files")
 def test_decide_reviewers_auto_large(mock_get_files):
     # ファイル数が多い場合 -> ALL
     mock_get_files.return_value = ["f1.py", "f2.py", "f3.py", "f4.py", "f5.py"]
@@ -18,7 +18,7 @@ def test_decide_reviewers_auto_large(mock_get_files):
     assert "ALL" in log
     assert len(slots) == len(config.REVIEWER_SLOTS)
 
-@patch("src.core.git_utils.get_changed_files")
+@patch("multi_llm_reviewer.core.git_utils.get_changed_files")
 def test_decide_reviewers_critical(mock_get_files):
     # 重要ファイルが含まれる場合 -> ALL
     mock_get_files.return_value = ["src/core/config.py"]

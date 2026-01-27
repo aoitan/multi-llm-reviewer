@@ -11,12 +11,12 @@ license = { text = "MIT" }
 dependencies = []
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+pythonpath = ["src"]
 testpaths = ["tests"]
 
 [project.scripts]
-llm-review = "src.cli.review:main"
-llm-fix = "src.cli.autofix:main"
+llm-review = "multi_llm_reviewer.cli.review:main"
+llm-fix = "multi_llm_reviewer.cli.autofix:main"
 
 [dependency-groups]
 dev = [

@@ -1,5 +1,5 @@
 from unittest.mock import patch, MagicMock
-from src.core import github_utils
+from multi_llm_reviewer.core import github_utils
 import json
 
 @patch("subprocess.run")

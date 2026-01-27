@@ -1,4 +1,4 @@
-from src.core import config
+from multi_llm_reviewer.core import config
 
 def test_config_constants():
     """主要な定数が定義されていることを確認する"""

@@ -1,4 +1,4 @@
-from src.services import fix_service
+from multi_llm_reviewer.services import fix_service
 import json
 
 def test_has_critical_issues_json_true():

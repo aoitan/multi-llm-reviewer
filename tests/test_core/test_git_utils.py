@@ -1,5 +1,5 @@
 from unittest.mock import patch, MagicMock
-from src.core import git_utils
+from multi_llm_reviewer.core import git_utils
 
 @patch("subprocess.run")
 def test_get_current_branch_issue_num(mock_run):

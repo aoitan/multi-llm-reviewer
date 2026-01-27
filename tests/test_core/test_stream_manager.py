@@ -1,4 +1,4 @@
-from src.core.stream_manager import StreamManager
+from multi_llm_reviewer.core.stream_manager import StreamManager
 from unittest.mock import patch
 import sys
 
