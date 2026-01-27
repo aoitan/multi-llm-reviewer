@@ -1,9 +1,13 @@
 [project]
 name = "multi-llm-reviewer"
 version = "0.1.0"
-description = "Add your description here"
+description = "Multi-LLM Code Reviewer & Auto-Fixer CLI"
 readme = "README.md"
 requires-python = ">=3.13"
+authors = [
+    { name = "Aoitan", email = "aoitan@example.com" }
+]
+license = { text = "MIT" }
 dependencies = []
 
 [tool.pytest.ini_options]
@@ -11,8 +15,8 @@ pythonpath = ["."]
 testpaths = ["tests"]
 
 [project.scripts]
-review = "src.cli.review:main"
-autofix = "src.cli.autofix:main"
+llm-review = "src.cli.review:main"
+llm-fix = "src.cli.autofix:main"
 
 [dependency-groups]
 dev = [
