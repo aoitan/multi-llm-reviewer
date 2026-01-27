@@ -1,6 +1,7 @@
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from src.core import config, git_utils, github_utils, llm_client
+from src.core.stream_manager import StreamManager
 
 def decide_reviewers(target_branch, mode_arg):
     """レビューモードに基づいて実行するレビュアーリストを決定する"""
@@ -54,9 +55,68 @@ def decide_reviewers(target_branch, mode_arg):
         
     return config.REVIEWER_SLOTS, "Unknown mode, defaulting to ALL"
 
+def _run_single_reviewer_stream(slot, prompt, stream_manager):
+    """1つのレビュアーを実行し、出力をStreamManagerに流す"""
+    name = slot["name"]
+    cmds = slot["cmds"]
+    last_res = None
+    
+    # ヘッダーを出力 (StreamManager経由)
+    header = f"\n{'='*40}\n REVIEWER: {name}\n{'='*40}\n"
+    stream_manager.write(name, header)
+
+    for i, cmd in enumerate(cmds):
+        model_name = " ".join(cmd)
+        
+        # コールバック関数: 受け取ったテキストをStreamManagerに渡す
+        def callback(text):
+            stream_manager.write(name, text)
+            
+        status, output = llm_client.execute_command_async(cmd, input_text=prompt, stream_callback=callback)
+        
+        if status == "SUCCESS":
+            stream_manager.finish(name)
+            return {
+                "name": f"{name} ({model_name})" if len(cmds) > 1 else name,
+                "output": stream_manager.get_full_output(name), # ヘッダー込みの全出力
+                "success": True
+            }
+        
+        if status == "RATE_LIMIT":
+            err_msg = f"\n[WARN] {name} ({model_name}) hit rate limit.\n"
+            stream_manager.write(name, err_msg)
+            
+            last_res = {
+                "name": f"{name} ({model_name})",
+                "output": output,
+                "success": False,
+                "reason": "RATE_LIMIT"
+            }
+            if i < len(cmds) - 1:
+                stream_manager.write(name, f"[INFO] Falling back to next model for {name}...\n")
+                continue
+            else:
+                break
+        
+        # General ERROR
+        err_msg = f"\n[ERROR] Execution failed: {status}\n"
+        stream_manager.write(name, err_msg)
+        
+        stream_manager.finish(name)
+        return {
+            "name": f"{name} ({model_name})",
+            "output": output,
+            "success": False,
+            "reason": "ERROR"
+        }
+
+    stream_manager.finish(name)
+    return last_res
+
+
 def run_multi_llm_review(target_branch="main", issue_num=None, mode="auto", spec_text=""):
     """
-    複数のLLMによるレビューを実行する。
+    複数のLLMによるレビューを実行する（ストリーミング対応）。
     """
     issue_context = ""
     actual_issue_num = issue_num or git_utils.get_current_branch_issue_num()
@@ -92,24 +152,27 @@ def run_multi_llm_review(target_branch="main", issue_num=None, mode="auto", spec
 ```
 """
 
+    # StreamManagerの初期化
+    priority_order = [s["name"] for s in selected_slots]
+    stream_manager = StreamManager(priority_order)
+    
     results = []
+    
+    # 並列実行
     with ThreadPoolExecutor(max_workers=len(selected_slots)) as executor:
-        futures = [executor.submit(llm_client.run_reviewer_with_fallback, slot, prompt) for slot in selected_slots]
+        # StreamManagerを渡して実行
+        futures = [
+            executor.submit(_run_single_reviewer_stream, slot, prompt, stream_manager) 
+            for slot in selected_slots
+        ]
         
-        for future in as_completed(futures):
-            res = future.result()
-            results.append(res)
-            
-            print("=" * 40)
-            print(f" REVIEWER: {res['name']}")
-            print("=" * 40)
-            if res['success']:
-                print(res['output'])
-            else:
-                print(f"[ERROR] Execution failed: {res.get('reason', 'Unknown error')}")
-                if 'output' in res:
-                    print(res['output'])
-            print("\n")
-            sys.stdout.flush()
+        # 完了待ち (出力はStreamManagerが制御するため、ここでは結果集計のみ)
+        for future in futures:
+            try:
+                res = future.result()
+                if res:
+                    results.append(res)
+            except Exception as e:
+                print(f"[INTERNAL ERROR] Thread failed: {e}", file=sys.stderr)
 
     return results

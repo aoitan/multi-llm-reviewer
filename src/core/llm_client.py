@@ -61,6 +61,65 @@ def execute_command(cmd, input_text=None):
     except Exception as e:
         return "ERROR", str(e)
 
+def execute_command_async(cmd, input_text=None, stream_callback=None):
+    """
+    外部コマンドを非同期実行し、出力をリアルタイムでコールバックに渡す。
+    
+    Args:
+        cmd: 実行コマンド
+        input_text: stdin入力
+        stream_callback: func(text) -> None
+        
+    Returns:
+        tuple: (status, full_output)
+    """
+    try:
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, # stderrもstdoutにマージ
+            stdin=subprocess.PIPE if input_text is not None else None,
+            text=True,
+            bufsize=1,
+            universal_newlines=True
+        )
+
+        if input_text is not None:
+            try:
+                process.stdin.write(input_text)
+                process.stdin.close()
+            except BrokenPipeError:
+                pass
+
+        full_output_parts = []
+        
+        # 1文字ずつではなく、行またはバッファ単位で読む
+        while True:
+            line = process.stdout.readline()
+            if not line and process.poll() is not None:
+                break
+            
+            if line:
+                if stream_callback:
+                    stream_callback(line)
+                full_output_parts.append(line)
+        
+        process.wait()
+        full_output = "".join(full_output_parts)
+        
+        if process.returncode != 0:
+            if is_rate_limit(full_output):
+                return "RATE_LIMIT", full_output
+            return "ERROR", full_output
+            
+        return "SUCCESS", full_output
+        
+    except Exception as e:
+        err_msg = str(e)
+        if stream_callback:
+            stream_callback(f"[INTERNAL ERROR] {err_msg}\n")
+        return "ERROR", err_msg
+
 def run_reviewer_with_fallback(slot, prompt):
     """
     1つのレビュアー枠（Slot）に対して、フォールバックを含めて実行する。
