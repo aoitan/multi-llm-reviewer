@@ -4,20 +4,26 @@ from multi_llm_reviewer.services import fix_service
 from multi_llm_reviewer.core import config
 
 def main():
-    parser = argparse.ArgumentParser(description="Auto Fix Loop with Fallback & Role Strategy", add_help=False)
+    parser = argparse.ArgumentParser(
+        description="Auto Fix Loop with Fallback & Role Strategy",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+--- Review Options ---
+You can pass review options after '--' or as additional arguments, for example:
+  -i, --issue ISSUE     GitHub issue number to fix
+  -b, --base BASE       Base branch for review (default: main)
+  --reviewers MODE      Reviewer mode (auto, all, etc. default: auto)
+  spec                  Additional specification text
+
+Example:
+  python3 -m multi_llm_reviewer.cli.autofix --fixer copilot -- -b develop -i 123
+"""
+    )
     parser.add_argument("--fixer", choices=config.FIXER_ORDER, default="gemini3pro", help="Primary fixer agent")
-    parser.add_argument("--help", action="store_true", help="Show help")
     
     # 残りの引数は review_all.py (review_service) に渡すためのものとして取得
     args, unknown_args = parser.parse_known_args()
     
-    if args.help:
-        parser.print_help()
-        print("\n--- Review Options ---")
-        print("You can pass review options after '--', for example:")
-        print("  python3 -m multi_llm_reviewer.cli.autofix --fixer copilot -- -b develop -i 123")
-        sys.exit(0)
-
     # unknown_args をパースして review_service 用の引数を準備
     review_parser = argparse.ArgumentParser(add_help=False)
     review_parser.add_argument("-i", "--issue")
