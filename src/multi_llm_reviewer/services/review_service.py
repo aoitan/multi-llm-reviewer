@@ -174,7 +174,7 @@ def run_multi_llm_review(target_branch="main", issue_num=None, mode="auto", spec
 {{
   "reviewer_name": "YOUR_NAME",
   "critical_issues_found": BOOLEAN,  // プロダクション環境へのデプロイを阻止すべき重大な問題があれば true
-  "summary": "簡潔な要約（1行）",
+  "reason": "重大な問題が見つかった理由、または全体的な要約（1行）",
   "review_score": 0-100, // コード品質のスコア
   "actionable_feedback": [
     "具体的な修正提案1",

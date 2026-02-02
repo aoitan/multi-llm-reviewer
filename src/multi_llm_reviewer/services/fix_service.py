@@ -26,7 +26,8 @@ def has_critical_issues(review_text):
                 if data.get("critical_issues_found") is True:
                     critical_found = True
                     reviewer = data.get("reviewer_name", "Unknown")
-                    reason = data.get("reason", "No reason provided")
+                    # reason がなければ summary を使い、それもなければデフォルト値を出す
+                    reason = data.get("reason") or data.get("summary") or "No reason provided"
                     reasons.append(f"[{reviewer}] {reason}")
             except json.JSONDecodeError:
                 continue
