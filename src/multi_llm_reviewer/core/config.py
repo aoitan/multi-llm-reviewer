@@ -68,3 +68,7 @@ EXCLUDE_PATTERNS = [
 # --- その他 ---
 DEFAULT_BASE_BRANCH = "main"
 MAX_DIFF_CHARS = 100000
+
+# --- 自動モード判定の閾値 ---
+# このファイル数を超えると "Large changeset" とみなしてALLモードになる
+LARGE_CHANGESET_THRESHOLD = 10

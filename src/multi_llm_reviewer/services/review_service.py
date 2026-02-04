@@ -23,10 +23,11 @@ def decide_reviewers(target_branch, mode_arg):
     reason = "Default (Single)"
     should_be_all = False
     
-    # 判定1: 変更ファイル数が多い (>= 5)
-    if len(files) >= 5:
+    # 判定1: 変更ファイル数が多い
+    threshold = getattr(config, "LARGE_CHANGESET_THRESHOLD", 5)
+    if len(files) >= threshold:
         should_be_all = True
-        reason = f"Large changeset ({len(files)} files)"
+        reason = f"Large changeset ({len(files)} files >= {threshold})"
     
     # 判定2: 重要ファイルが含まれる
     if not should_be_all:

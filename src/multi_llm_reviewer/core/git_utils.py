@@ -60,10 +60,15 @@ Please read specific files if you need more context.
         return stat_output
 
 def get_changed_files(target_branch):
-    """変更されたファイルの一覧を取得する"""
+    """
+    変更されたファイルの一覧を取得する（除外パターンを適用）。
+    """
     try:
+        exclude_patterns = config.EXCLUDE_PATTERNS
+        cmd = ["git", "diff", "--name-only", target_branch, "--"] + [f":!{p}" for p in exclude_patterns]
+        
         res = subprocess.run(
-            ["git", "diff", "--name-only", target_branch],
+            cmd,
             capture_output=True, text=True
         )
         return [f.strip() for f in res.stdout.strip().splitlines() if f.strip()]

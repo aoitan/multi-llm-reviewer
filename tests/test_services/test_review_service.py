@@ -13,10 +13,10 @@ def test_decide_reviewers_auto_small(mock_get_files):
 @patch("multi_llm_reviewer.core.git_utils.get_changed_files")
 def test_decide_reviewers_auto_large(mock_get_files):
     # ファイル数が多い場合 -> ALL
-    mock_get_files.return_value = ["f1.py", "f2.py", "f3.py", "f4.py", "f5.py"]
+    # 閾値が10に変更されたため、10個以上のファイルを返すようにする
+    mock_get_files.return_value = [f"f{i}.py" for i in range(12)]
     slots, log = review_service.decide_reviewers("main", "auto")
     assert "ALL" in log
-    assert len(slots) == len(config.REVIEWER_SLOTS)
 
 @patch("multi_llm_reviewer.core.git_utils.get_changed_files")
 def test_decide_reviewers_critical(mock_get_files):

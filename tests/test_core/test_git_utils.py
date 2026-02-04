@@ -20,10 +20,17 @@ def test_get_changed_files(mock_run):
     mock_run.return_value = MagicMock(stdout="file1.py\nfile2.py\n")
     files = git_utils.get_changed_files("main")
     assert files == ["file1.py", "file2.py"]
-    mock_run.assert_called_with(
-        ["git", "diff", "--name-only", "main"],
-        capture_output=True, text=True
-    )
+    
+    # 除外パターンが含まれているか確認
+    # 引数はリストなので、最初の数要素と、除外パターンが含まれているかをチェック
+    call_args = mock_run.call_args[0][0]
+    assert call_args[:4] == ["git", "diff", "--name-only", "main"]
+    assert "--" in call_args
+    # 少なくとも1つの除外パターンが含まれていること
+    assert any(":!" in arg for arg in call_args)
+    
+    # kwargsの確認
+    mock_run.assert_called_with(call_args, capture_output=True, text=True)
 
 @patch("subprocess.run")
 def test_get_git_diff_small(mock_run):
