@@ -58,8 +58,7 @@ FIXER_COMMANDS = {
 LOCAL_LLM_REVIEWER_SLOT = {
     "name": "LocalLlama3 (優先)",
     "cmds": [
-        ["ollama", "run", "llama3", "--system", "コードレビュー専門家"],
-        ["ollama", "run", "llama3"]  # システムメッセージ用のオーバーフロー
+        ["ollama", "run", "llama3"]
     ]
 }
 
