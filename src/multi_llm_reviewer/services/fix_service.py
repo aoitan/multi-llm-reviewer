@@ -79,19 +79,56 @@ def get_role_instructions(loop_count):
 
 def run_fix_attempt(review_text, fixer_name, loop_count):
     """特定のFixerで設計と実装の二段階で修正を試みる"""
-    # ローカルLLM専用モードのチェック
+    
+    # 0. コンテキスト分析 (オフロード判定用)
+    # 現在の変更規模を推測するために git_utils を使用
+    # 本来は review_args を受け取るべきだが、簡易的に再取得
+    base_branch = config.DEFAULT_BASE_BRANCH
+    changed_files = git_utils.get_changed_files(base_branch)
+    threshold = getattr(config, "LARGE_CHANGESET_THRESHOLD", 10)
+    
+    is_large_changeset = len(changed_files) >= threshold
+    is_critical_path = any(kw in f.lower() for f in changed_files for kw in config.CRITICAL_PATH_KEYWORDS)
+    
+    can_offload_design = (
+        not is_large_changeset 
+        and not is_critical_path 
+        and llm_client.is_ollama_available()
+    )
+
+    # 1. Design Phase の担当エージェント決定
+    design_fixer = fixer_name # デフォルトは指定されたFixer (フロンティア)
+    design_cmd = None
+    
     if os.getenv("LOCAL_LLM_ONLY") == "1":
-        # configに LOCAL_LLM_FIXER_COMMANDS があればそれを使う
-        # ここでは 'llama3-fix' などをデフォルトにする
-        fixer_name = "llama3-fix"
-        fix_cmd = config.LOCAL_LLM_FIXER_COMMANDS.get(fixer_name, ["ollama", "run", "llama3"])
+        # 強制ローカルモード
+        design_fixer = "llama3-fix"
+        design_cmd = config.LOCAL_LLM_FIXER_COMMANDS.get("llama3-fix")
+    elif can_offload_design:
+        # 条件付きオフロード: ローカルLLMに任せる
+        print(f"\n[INFO] Offloading Design Phase to Local LLM (Small changeset, Non-critical)...")
+        design_fixer = "llama3-fix (Offloaded)"
+        design_cmd = config.LOCAL_LLM_FIXER_COMMANDS.get("llama3-fix")
+    
+    if design_cmd is None:
+        design_cmd = config.FIXER_COMMANDS.get(fixer_name, config.FIXER_COMMANDS["gemini3pro"])
+
+
+    # 2. Implementation Phase の担当エージェント決定
+    impl_fixer = fixer_name
+    impl_cmd = None
+    
+    if os.getenv("LOCAL_LLM_ONLY") == "1":
+        impl_fixer = "llama3-fix"
+        impl_cmd = config.LOCAL_LLM_FIXER_COMMANDS.get("llama3-fix")
     else:
-        fix_cmd = config.FIXER_COMMANDS.get(fixer_name, config.FIXER_COMMANDS["gemini3pro"])
+        # 実装は常にフロンティアLLM (指定されたFixer)
+        impl_cmd = config.FIXER_COMMANDS.get(fixer_name, config.FIXER_COMMANDS["gemini3pro"])
         
     role_info = get_role_instructions(loop_count)
     
     # --- STEP 1: DESIGN PHASE ---
-    print(f"\n>>> [PHASE 1: DESIGN] Role: {role_info['role']} using {fixer_name}...")
+    print(f"\n>>> [PHASE 1: DESIGN] Role: {role_info['role']} using {design_fixer}...")
     design_base = config.load_prompt("fix_design_prompt.txt")
     design_prompt = f"""{design_base}
 
@@ -102,12 +139,22 @@ def run_fix_attempt(review_text, fixer_name, loop_count):
 {review_text}
 """
     
-    status, design_output = llm_client.execute_command(fix_cmd, design_prompt)
+    # execute_command は内部で local_llm_client への振り分けを持っていないため
+    # コマンド自体を正しく選択して渡す必要がある。
+    # llm_client.execute_command は汎用的なので、cmdリストを渡せば動くはずだが
+    # local_llm_client のラッパーを経由させる必要があるかどうか
+    
+    if "ollama" in design_cmd[0]:
+        from multi_llm_reviewer.core import local_llm_client
+        status, design_output = local_llm_client.execute_local_llm_cli(design_cmd, input_text=design_prompt)
+    else:
+        status, design_output = llm_client.execute_command(design_cmd, design_prompt)
+
     if status != "SUCCESS":
         return status, design_output
 
     # --- STEP 2: IMPLEMENTATION PHASE ---
-    print(f"\n>>> [PHASE 2: IMPLEMENTATION] Role: {role_info['role']} using {fixer_name}...")
+    print(f"\n>>> [PHASE 2: IMPLEMENTATION] Role: {role_info['role']} using {impl_fixer}...")
     impl_base = config.load_prompt("fix_implementation_prompt.txt")
     implementation_prompt = f"""{impl_base}
 
@@ -121,7 +168,11 @@ def run_fix_attempt(review_text, fixer_name, loop_count):
 {design_output}
 """
     
-    return llm_client.execute_command(fix_cmd, implementation_prompt)
+    if "ollama" in impl_cmd[0]:
+        from multi_llm_reviewer.core import local_llm_client
+        return local_llm_client.execute_local_llm_cli(impl_cmd, input_text=implementation_prompt)
+    else:
+        return llm_client.execute_command(impl_cmd, implementation_prompt)
 
 def run_fix_with_fallback(review_text, primary_fixer, loop_count):
     """レートリミット時にフォールバックしつつ修正を実行する"""
