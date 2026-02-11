@@ -91,6 +91,17 @@ llm-fix --fixer copilot
 llm-fix --fixer gemini3pro -- -b develop -i 123
 ```
 
+## トラブルシューティング
+
+### ローカルLLMでエラーが発生する
+- **ollamaコマンドが見つかりません**: [Ollama公式サイト](https://ollama.ai/) からインストールし、ターミナルで `ollama --version` が動作することを確認してください。
+- **モデルが見つかりません**: `ollama list` を実行して `llama3` が存在することを確認してください。なければ `ollama pull llama3` を実行します。
+- **実行が非常に遅い**: ローカルLLMはPCのスペックに依存します。GPUが利用可能な環境では大幅に高速化されます。
+
+### 修正が反映されない
+- `uv tool install` を使用している場合、ソースコードの変更を反映するには再インストールが必要です。
+- 開発中は `uv tool install --editable .` を使用すると、再インストールなしにコードの変更が反映されます。
+
 ## ディレクトリ構造
 
 ```

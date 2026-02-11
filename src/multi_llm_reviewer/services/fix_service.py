@@ -92,18 +92,11 @@ def run_fix_attempt(review_text, fixer_name, loop_count):
     
     # --- STEP 1: DESIGN PHASE ---
     print(f"\n>>> [PHASE 1: DESIGN] Role: {role_info['role']} using {fixer_name}...")
-    design_prompt = f"""
+    design_base = config.load_prompt("fix_design_prompt.txt")
+    design_prompt = f"""{design_base}
+
 あなたは今、**{role_info['role']}** として行動してください。
 目標: {role_info['goal']}
-
-以下のコードレビュー結果を分析し、詳細な「修正設計書」を作成してください。
-このフェーズでは、**ソースコードの編集（書き換えツールの使用）は一切禁止**です。
-ファイルの内容を読み取って状況を把握し、論理的な修正手順を検討してください。
-
-出力には以下の内容を含めてください：
-1. 現状の根本原因の分析（{role_info['role']}の視点で）
-2. 修正すべきファイルと箇所の特定
-3. 具体的な修正方針
 
 --- Review Result ---
 {review_text}
@@ -115,12 +108,11 @@ def run_fix_attempt(review_text, fixer_name, loop_count):
 
     # --- STEP 2: IMPLEMENTATION PHASE ---
     print(f"\n>>> [PHASE 2: IMPLEMENTATION] Role: {role_info['role']} using {fixer_name}...")
-    implementation_prompt = f"""
+    impl_base = config.load_prompt("fix_implementation_prompt.txt")
+    implementation_prompt = f"""{impl_base}
+
 あなたは **{role_info['role']}** です。
 目標: {role_info['goal']}
-
-先ほど作成した「修正設計書」に従って、コードを修正してください。
-レビュー指摘事項が解決され、テストがパスするように実装してください。
 
 --- Review Result ---
 {review_text}

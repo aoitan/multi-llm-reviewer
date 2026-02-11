@@ -3,6 +3,19 @@
 # --- レビュー・修正ループの全般設定 ---
 MAX_LOOPS = 5
 
+import os
+
+def load_prompt(filename):
+    """promptsディレクトリからプロンプトファイルを読み込む"""
+    base_dir = os.path.dirname(os.path.dirname(__file__))
+    prompt_path = os.path.join(base_dir, "prompts", filename)
+    try:
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception as e:
+        print(f"[WARN] Failed to load prompt {filename}: {e}")
+        return ""
+
 # --- レビュアー構成 (フォールバック順) ---
 REVIEWER_SLOTS = [
     {

@@ -36,3 +36,13 @@ def test_local_llm_config():
     assert "llama3-fix" in config.LOCAL_LLM_FIXER_COMMANDS
     assert isinstance(config.LOCAL_LLM_FIXER_COMMANDS["llama3-fix"], list)
     assert config.LOCAL_LLM_FIXER_COMMANDS["llama3-fix"][0] == "ollama"
+
+def test_load_prompt():
+    """プロンプトの読み込みが機能することを確認する"""
+    # 存在するファイルを読み込んでみる
+    content = config.load_prompt("review_prompt.txt")
+    assert content != ""
+    assert "役割" in content
+
+    # 存在しないファイルの場合は空文字を返す
+    assert config.load_prompt("non_existent.txt") == ""
