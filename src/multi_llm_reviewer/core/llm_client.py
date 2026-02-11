@@ -133,14 +133,14 @@ def run_reviewer_with_fallback(slot, prompt):
     Returns:
         dict: 結果情報
     """
-    # ローカルLLM優先モードのチェック
+    from . import local_llm_client
+
+    # 1. ローカルLLM強制モードのチェック
     if os.getenv("LOCAL_LLM_ONLY") == "1":
-        from . import local_llm_client
         # slotをローカルLLM用に差し替えるか、local_llm_clientを直接呼ぶ
-        # ここでは透過的に扱うため、名前を維持しつつ中身をローカル実行に振る
         status, output, success, reason = local_llm_client.run_local_llm_reviewer(slot, prompt)
         return {
-            "name": slot["name"],
+            "name": slot["name"] + " (Local)",
             "output": output,
             "success": success,
             "reason": reason
@@ -150,6 +150,7 @@ def run_reviewer_with_fallback(slot, prompt):
     cmds = slot["cmds"]
     last_res = None
     
+    # 2. フロンティアLLMの実行試行
     for i, cmd in enumerate(cmds):
         model_name = " ".join(cmd)
         status, output = execute_command(cmd, input_text=prompt)
@@ -176,11 +177,29 @@ def run_reviewer_with_fallback(slot, prompt):
                 break
         
         # General ERROR
-        return {
+        last_res = {
             "name": f"{name} ({model_name})",
             "output": output,
             "success": False,
             "reason": "ERROR"
         }
 
+    # 3. 最終防衛ライン: ローカルLLMへのフォールバック
+    # フロンティアLLMが全滅し、かつOllamaが利用可能な場合
+    if local_llm_client.is_ollama_available():
+        print(f"[WARN] All Frontier models failed for {name}. Falling back to Local LLM (Ollama)...", file=sys.stderr)
+        
+        # ローカルLLM用のスロット定義を取得（なければデフォルトのLlama3）
+        local_slot = getattr(config, "LOCAL_LLM_REVIEWER_SLOT", {"name": "LocalFallback", "cmds": [["ollama", "run", "llama3"]]})
+        
+        status, output, success, reason = local_llm_client.run_local_llm_reviewer(local_slot, prompt)
+        
+        return {
+            "name": f"{name} (Fallback to Local)",
+            "output": output,
+            "success": success,
+            "reason": reason or last_res.get("reason")
+        }
+
+    # ローカルも使えない場合は最後のフロンティアエラーを返す
     return last_res
