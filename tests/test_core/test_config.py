@@ -18,3 +18,21 @@ def test_critical_path_keywords():
     assert isinstance(config.CRITICAL_PATH_KEYWORDS, list)
     assert "core" in config.CRITICAL_PATH_KEYWORDS
     assert "security" in config.CRITICAL_PATH_KEYWORDS
+
+
+def test_local_llm_config():
+    """ローカルLLM用の設定が定義されていることを確認する"""
+    # ローカルLLM用の優先レビュアーSlot
+    assert hasattr(config, 'LOCAL_LLM_REVIEWER_SLOT')
+    assert isinstance(config.LOCAL_LLM_REVIEWER_SLOT, dict)
+    assert "name" in config.LOCAL_LLM_REVIEWER_SLOT
+    assert "cmds" in config.LOCAL_LLM_REVIEWER_SLOT
+    assert "LocalLlama3" in config.LOCAL_LLM_REVIEWER_SLOT["name"]
+    assert len(config.LOCAL_LLM_REVIEWER_SLOT["cmds"]) > 0
+
+    # ローカルLLM用の修正エージェントマッピング
+    assert hasattr(config, 'LOCAL_LLM_FIXER_COMMANDS')
+    assert isinstance(config.LOCAL_LLM_FIXER_COMMANDS, dict)
+    assert "llama3-fix" in config.LOCAL_LLM_FIXER_COMMANDS
+    assert isinstance(config.LOCAL_LLM_FIXER_COMMANDS["llama3-fix"], list)
+    assert config.LOCAL_LLM_FIXER_COMMANDS["llama3-fix"][0] == "ollama"

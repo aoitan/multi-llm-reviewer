@@ -3,9 +3,18 @@ from concurrent.futures import ThreadPoolExecutor
 from multi_llm_reviewer.core import config, git_utils, github_utils, llm_client
 from multi_llm_reviewer.core.stream_manager import StreamManager
 
+import os
+
 def decide_reviewers(target_branch, mode_arg):
     """レビューモードに基づいて実行するレビュアーリストを決定する"""
     
+    # ローカルLLM専用モードのチェック
+    if os.getenv("LOCAL_LLM_ONLY") == "1":
+        # configに LOCAL_LLM_REVIEWER_SLOT があればそれを使う
+        local_slot = getattr(config, "LOCAL_LLM_REVIEWER_SLOT", None)
+        if local_slot:
+            return [local_slot], "LOCAL_LLM_ONLY mode (Llama3 preferred)"
+
     # "all" 指定
     if mode_arg.lower() == "all":
         return config.REVIEWER_SLOTS, "User forced ALL"
@@ -24,7 +33,7 @@ def decide_reviewers(target_branch, mode_arg):
     should_be_all = False
     
     # 判定1: 変更ファイル数が多い
-    threshold = getattr(config, "LARGE_CHANGESET_THRESHOLD", 5)
+    threshold = getattr(config, "LARGE_CHANGESET_THRESHOLD", 10)
     if len(files) >= threshold:
         should_be_all = True
         reason = f"Large changeset ({len(files)} files >= {threshold})"

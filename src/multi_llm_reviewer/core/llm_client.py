@@ -2,6 +2,8 @@ import subprocess
 import sys
 from multi_llm_reviewer.core import config
 
+import os
+
 def is_rate_limit(text):
     """出力テキストからレートリミットエラーを検知する"""
     if not text:
@@ -131,6 +133,19 @@ def run_reviewer_with_fallback(slot, prompt):
     Returns:
         dict: 結果情報
     """
+    # ローカルLLM優先モードのチェック
+    if os.getenv("LOCAL_LLM_ONLY") == "1":
+        from . import local_llm_client
+        # slotをローカルLLM用に差し替えるか、local_llm_clientを直接呼ぶ
+        # ここでは透過的に扱うため、名前を維持しつつ中身をローカル実行に振る
+        status, output, success, reason = local_llm_client.run_local_llm_reviewer(slot, prompt)
+        return {
+            "name": slot["name"],
+            "output": output,
+            "success": success,
+            "reason": reason
+        }
+
     name = slot["name"]
     cmds = slot["cmds"]
     last_res = None

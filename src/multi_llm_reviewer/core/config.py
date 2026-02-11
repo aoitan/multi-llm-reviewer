@@ -50,6 +50,24 @@ FIXER_COMMANDS = {
     "codex-mini": ["codex", "exec", "--full-auto", "-m", "gpt-5.1-codex-mini"]
 }
 
+# --- ローカルLLM用の追加設定 ---
+# セキュリティ・プライバシー重視のため、ローカルLLM（Ollama）を優先して使用
+# ユーザーは環境変数 LOCAL_LLM_ONLY=1 を設定することで、フロンティアLLMを完全に無視できる
+
+# ローカルLLM用の優先レビュアーSlot（フロンティアLLMの前に優先的に使われる）
+LOCAL_LLM_REVIEWER_SLOT = {
+    "name": "LocalLlama3 (優先)",
+    "cmds": [
+        ["ollama", "run", "llama3", "--system", "コードレビュー専門家"],
+        ["ollama", "run", "llama3"]  # システムメッセージ用のオーバーフロー
+    ]
+}
+
+# ローカルLLM用の修正エージェントマッピング
+LOCAL_LLM_FIXER_COMMANDS = {
+    "llama3-fix": ["ollama", "run", "llama3"]
+}
+
 # --- 重要パスの判定キーワード ---
 # これらが含まれるファイルが変更された場合、自動的にALLモードでレビューを行う
 CRITICAL_PATH_KEYWORDS = [

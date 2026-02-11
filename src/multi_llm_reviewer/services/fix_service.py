@@ -4,6 +4,8 @@ import sys
 from multi_llm_reviewer.core import config, llm_client
 from multi_llm_reviewer.services import review_service
 
+import os
+
 def has_critical_issues(review_text):
     """
     レビュー結果のテキストを解析し、重大な問題が含まれているか判定する。
@@ -77,7 +79,15 @@ def get_role_instructions(loop_count):
 
 def run_fix_attempt(review_text, fixer_name, loop_count):
     """特定のFixerで設計と実装の二段階で修正を試みる"""
-    fix_cmd = config.FIXER_COMMANDS.get(fixer_name, config.FIXER_COMMANDS["gemini3pro"])
+    # ローカルLLM専用モードのチェック
+    if os.getenv("LOCAL_LLM_ONLY") == "1":
+        # configに LOCAL_LLM_FIXER_COMMANDS があればそれを使う
+        # ここでは 'llama3-fix' などをデフォルトにする
+        fixer_name = "llama3-fix"
+        fix_cmd = config.LOCAL_LLM_FIXER_COMMANDS.get(fixer_name, ["ollama", "run", "llama3"])
+    else:
+        fix_cmd = config.FIXER_COMMANDS.get(fixer_name, config.FIXER_COMMANDS["gemini3pro"])
+        
     role_info = get_role_instructions(loop_count)
     
     # --- STEP 1: DESIGN PHASE ---
