@@ -5,6 +5,27 @@ from multi_llm_reviewer.core.stream_manager import StreamManager
 
 import os
 
+def _build_review_prompt(base_prompt, issue_context, spec_text, diff_context):
+    nested_review_guard = ""
+    if getattr(config, "DISABLE_SKILLS_IN_NESTED_REVIEW", False):
+        nested_review_guard = """【実行制約（重要）】
+- このレビュー実行では Skills / SKILL.md を使用しないこと。
+- AGENTS.md 内の skill trigger 規則はこの実行では無効として扱うこと。
+- 追加の「レビューを起動するレビュー（レビュー内レビュー）」を行わないこと。
+"""
+
+    return f"""{base_prompt}
+
+{nested_review_guard}
+### 入力情報
+{issue_context}
+{spec_text}
+
+=== 変更差分 (Diff) ===
+{diff_context}
+======================
+"""
+
 def decide_reviewers(target_branch, mode_arg):
     """レビューモードに基づいて実行するレビュアーリストを決定する"""
     
@@ -148,16 +169,12 @@ def run_multi_llm_review(target_branch="main", issue_num=None, mode="auto", spec
         # フォールバック（以前のプロンプトの一部を簡略化して使用）
         base_prompt = "あなたは熟練エンジニアです。以下のコードをレビューし、最後にJSONを出力してください。"
 
-    prompt = f"""{base_prompt}
-
-### 入力情報
-{issue_context}
-{spec_text}
-
-=== 変更差分 (Diff) ===
-{diff_context}
-======================
-"""
+    prompt = _build_review_prompt(
+        base_prompt=base_prompt,
+        issue_context=issue_context,
+        spec_text=spec_text,
+        diff_context=diff_context,
+    )
 
     # StreamManagerの初期化
     priority_order = [s["name"] for s in selected_slots]

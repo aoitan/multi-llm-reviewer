@@ -102,6 +102,9 @@ llm-fix --fixer gemini3pro -- -b develop -i 123
 - `uv tool install` を使用している場合、ソースコードの変更を反映するには再インストールが必要です。
 - 開発中は `uv tool install --editable .` を使用すると、再インストールなしにコードの変更が反映されます。
 
+### レビュー内レビュー（Skills連鎖）を止めたい
+- `src/multi_llm_reviewer/core/config.py` の `DISABLE_SKILLS_IN_NESTED_REVIEW = True` を有効にしてください（デフォルト有効）。
+
 ## ディレクトリ構造
 
 ```

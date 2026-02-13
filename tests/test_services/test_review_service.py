@@ -30,3 +30,31 @@ def test_decide_reviewers_forced_all():
     slots, log = review_service.decide_reviewers("main", "all")
     assert "forced ALL" in log
     assert len(slots) == len(config.REVIEWER_SLOTS)
+
+
+def test_build_review_prompt_includes_nested_review_guard_by_default():
+    prompt = review_service._build_review_prompt(
+        base_prompt="BASE",
+        issue_context="ISSUE",
+        spec_text="SPEC",
+        diff_context="DIFF",
+    )
+    assert "Skills / SKILL.md" in prompt
+    assert "レビュー内レビュー" in prompt
+    assert "DIFF" in prompt
+
+
+def test_build_review_prompt_can_disable_nested_review_guard():
+    original = config.DISABLE_SKILLS_IN_NESTED_REVIEW
+    try:
+        config.DISABLE_SKILLS_IN_NESTED_REVIEW = False
+        prompt = review_service._build_review_prompt(
+            base_prompt="BASE",
+            issue_context="ISSUE",
+            spec_text="SPEC",
+            diff_context="DIFF",
+        )
+        assert "Skills / SKILL.md" not in prompt
+        assert "レビュー内レビュー" not in prompt
+    finally:
+        config.DISABLE_SKILLS_IN_NESTED_REVIEW = original

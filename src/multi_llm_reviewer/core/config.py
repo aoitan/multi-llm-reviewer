@@ -102,3 +102,7 @@ MAX_DIFF_CHARS = 100000
 # --- 自動モード判定の閾値 ---
 # このファイル数を超えると "Large changeset" とみなしてALLモードになる
 LARGE_CHANGESET_THRESHOLD = 10
+
+# --- レビュー内レビュー抑止 ---
+# True の場合、レビュー実行時のプロンプトに「Skills/AGENTSトリガーを使わない」指示を追加する
+DISABLE_SKILLS_IN_NESTED_REVIEW = True

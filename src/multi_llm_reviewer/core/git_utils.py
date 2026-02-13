@@ -5,7 +5,8 @@ from multi_llm_reviewer.core import config
 
 
 def _exclude_args():
-    return [f":!{p}" for p in config.EXCLUDE_PATTERNS]
+    # Use long-form pathspec magic for wider git compatibility.
+    return [f":(exclude){p}" for p in config.EXCLUDE_PATTERNS]
 
 
 def _run_git_stdout(cmd):
@@ -13,6 +14,32 @@ def _run_git_stdout(cmd):
     return_code = res.returncode if isinstance(getattr(res, "returncode", 0), int) else 0
     if return_code != 0:
         err = (res.stderr or "").strip()
+        # Some git builds fail on pathspec magic. Retry once without exclude pathspecs.
+        if "pathspec magic" in err.lower() and any(
+            isinstance(arg, str) and (arg.startswith(":(exclude)") or arg.startswith(":!"))
+            for arg in cmd
+        ):
+            fallback_cmd = [
+                arg for arg in cmd
+                if not (
+                    isinstance(arg, str)
+                    and (arg.startswith(":(exclude)") or arg.startswith(":!"))
+                )
+            ]
+            print(
+                "[WARN] Exclude pathspec is not supported in this git. Retrying without exclusions.",
+                file=sys.stderr,
+            )
+            fallback_res = subprocess.run(fallback_cmd, capture_output=True, text=True)
+            fallback_code = (
+                fallback_res.returncode
+                if isinstance(getattr(fallback_res, "returncode", 0), int)
+                else 0
+            )
+            if fallback_code == 0:
+                return fallback_res.stdout
+            fallback_err = (fallback_res.stderr or "").strip()
+            raise RuntimeError(fallback_err or f"git command failed: {' '.join(fallback_cmd)}")
         raise RuntimeError(err or f"git command failed: {' '.join(cmd)}")
     return res.stdout
 
@@ -49,7 +76,12 @@ def get_git_diff(target_branch):
         if base_ref:
             committed = _run_git_stdout(["git", "diff", f"{base_ref}...HEAD", "--"] + exclude_args)
             if committed.strip():
-                sections.append(f"### Committed changes vs {base_ref}\n{committed}")
+                sections.append(f"### Committed changes vs {base_ref} (merge-base)\n{committed}")
+            else:
+                # Fallback to two-dot semantics to match `git diff <base>` behavior users expect.
+                committed_twodot = _run_git_stdout(["git", "diff", base_ref, "--"] + exclude_args)
+                if committed_twodot.strip():
+                    sections.append(f"### Changes vs {base_ref} (two-dot fallback)\n{committed_twodot}")
         else:
             print(f"[WARN] Base branch '{target_branch}' was not found. Skipping committed diff section.", file=sys.stderr)
 
@@ -88,6 +120,9 @@ def get_changed_files(target_branch):
         if base_ref:
             committed_files = _run_git_stdout(["git", "diff", "--name-only", f"{base_ref}...HEAD", "--"] + exclude_args)
             changed.extend(f.strip() for f in committed_files.splitlines() if f.strip())
+            if not changed:
+                committed_files_twodot = _run_git_stdout(["git", "diff", "--name-only", base_ref, "--"] + exclude_args)
+                changed.extend(f.strip() for f in committed_files_twodot.splitlines() if f.strip())
 
         staged_files = _run_git_stdout(["git", "diff", "--name-only", "--cached", "--"] + exclude_args)
         changed.extend(f.strip() for f in staged_files.splitlines() if f.strip())

@@ -30,6 +30,7 @@ def test_get_changed_files(mock_run):
     assert call_args[1][:4] == ["git", "diff", "--name-only", "origin/main...HEAD"]
     assert call_args[2][:5] == ["git", "diff", "--name-only", "--cached", "--"]
     assert call_args[3][:4] == ["git", "diff", "--name-only", "--"]
+    assert any(isinstance(arg, str) and arg.startswith(":(exclude)") for arg in call_args[1])
 
 @patch("subprocess.run")
 def test_get_git_diff_small(mock_run):
@@ -58,3 +59,47 @@ def test_get_git_diff_includes_uncommitted_when_base_not_found(mock_run):
     assert "Unstaged changes" in diff
     assert "staged.py" in diff
     assert "wt.py" in diff
+
+
+@patch("subprocess.run")
+def test_get_git_diff_uses_twodot_fallback_when_triple_dot_empty(mock_run):
+    mock_run.side_effect = [
+        MagicMock(stdout="origin/main\n", returncode=0),  # rev-parse origin/main
+        MagicMock(stdout="", returncode=0),  # triple-dot committed
+        MagicMock(stdout="diff --git a/from_main.py b/from_main.py\n", returncode=0),  # two-dot fallback
+        MagicMock(stdout="", returncode=0),  # staged
+        MagicMock(stdout="", returncode=0),  # unstaged
+    ]
+    diff = git_utils.get_git_diff("main")
+    assert "two-dot fallback" in diff
+    assert "from_main.py" in diff
+
+
+@patch("subprocess.run")
+def test_get_changed_files_uses_twodot_fallback_when_triple_dot_empty(mock_run):
+    mock_run.side_effect = [
+        MagicMock(stdout="origin/main\n", returncode=0),  # rev-parse origin/main
+        MagicMock(stdout="", returncode=0),  # triple-dot name-only
+        MagicMock(stdout="from_main.py\n", returncode=0),  # two-dot fallback
+        MagicMock(stdout="", returncode=0),  # staged
+        MagicMock(stdout="", returncode=0),  # unstaged
+    ]
+    files = git_utils.get_changed_files("main")
+    assert files == ["from_main.py"]
+
+
+@patch("subprocess.run")
+def test_run_git_stdout_retries_without_excludes_on_pathspec_magic_error(mock_run):
+    mock_run.side_effect = [
+        MagicMock(stdout="", stderr="fatal: Unimplemented pathspec magic '_'", returncode=1),
+        MagicMock(stdout="ok\n", stderr="", returncode=0),
+    ]
+    out = git_utils._run_git_stdout(
+        ["git", "diff", "--", ":(exclude)__pycache__/*", "src/file.py"]
+    )
+    assert out == "ok\n"
+    assert mock_run.call_count == 2
+    first_cmd = mock_run.call_args_list[0].args[0]
+    second_cmd = mock_run.call_args_list[1].args[0]
+    assert ":(exclude)__pycache__/*" in first_cmd
+    assert ":(exclude)__pycache__/*" not in second_cmd
