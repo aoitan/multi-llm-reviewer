@@ -1,16 +1,47 @@
+# Python
 __pycache__/
-*.pyc
-.DS_Store
-.env
-venv/
-.venv/
-.vscode/
-.idea/
-*.log
-.pytest_cache/
-.ruff_cache/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
 build/
 dist/
 *.egg-info/
-.serena/
+*.egg
+
+# Unit test / coverage reports
+.tox/
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environments
+.env
+.env.*
+.venv/
+venv/
+env/
+
+# Logs
+*.log
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Project specific
 tmp/
+.serena/
