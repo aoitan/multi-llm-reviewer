@@ -1,11 +1,13 @@
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from multi_llm_reviewer.core import config, git_utils, github_utils, llm_client
+from multi_llm_reviewer.core import config, git_utils, github_utils, llm_client, local_llm_client
 from multi_llm_reviewer.core.stream_manager import StreamManager
+from multi_llm_reviewer.services import pre_check_service
 
 import os
 
-def _build_review_prompt(base_prompt, issue_context, spec_text, diff_context):
+def _build_review_prompt(base_prompt, issue_context, spec_text, diff_context,
+                         pre_check_summary: str = "", local_llm_analysis: str = ""):
     nested_review_guard = ""
     if getattr(config, "DISABLE_SKILLS_IN_NESTED_REVIEW", False):
         nested_review_guard = """【実行制約（重要）】
@@ -14,9 +16,23 @@ def _build_review_prompt(base_prompt, issue_context, spec_text, diff_context):
 - 追加の「レビューを起動するレビュー（レビュー内レビュー）」を行わないこと。
 """
 
+    pre_check_section = ""
+    if pre_check_summary:
+        pre_check_section = f"""
+【事前自動チェック済み項目（重複指摘は不要）】
+{pre_check_summary}
+"""
+
+    local_llm_section = ""
+    if local_llm_analysis:
+        local_llm_section = f"""
+【ローカルLLM事前分析（参考情報）】
+{local_llm_analysis}
+"""
+
     return f"""{base_prompt}
 
-{nested_review_guard}
+{nested_review_guard}{pre_check_section}{local_llm_section}
 ### 入力情報
 {issue_context}
 {spec_text}
@@ -156,11 +172,29 @@ def run_multi_llm_review(target_branch="main", issue_num=None, mode="auto", spec
         if issue_body:
             issue_context = f"\n--------------------------------------------------\n【関連Issue情報 (Issue #{actual_issue_num})】\n{issue_body}\n--------------------------------------------------\n"
 
+    diff_text = git_utils.get_git_diff(target_branch)
+    changed_files = git_utils.get_changed_files(target_branch)
+
+    # --- Gate 1: ルールベース事前チェック ---
+    pre_result = pre_check_service.run_all_checks(diff_text, changed_files)
+    if pre_result.has_blocking:
+        for issue in pre_result.blocking_issues:
+            print(f"[BLOCK] {issue}", file=sys.stderr)
+        print("[INFO] LLMレビューをスキップします（事前チェックでブロック条件を検出）。", file=sys.stderr)
+        return []
+    for warn in pre_result.warnings:
+        print(f"[WARN] {warn}", file=sys.stderr)
+
+    # --- Gate 2: ローカルLLM事前分析（Ollama利用可能時のみ） ---
+    local_analysis = ""
+    if local_llm_client.is_ollama_available():
+        print("[INFO] Running Gate 2: Local LLM pre-check...", file=sys.stderr)
+        local_analysis = local_llm_client.run_local_llm_pre_check(diff_text)
+
     # レビュアー決定
     selected_slots, decision_log = decide_reviewers(target_branch, mode)
     print(f"[INFO] Review Mode: {decision_log}", file=sys.stderr)
 
-    diff_text = git_utils.get_git_diff(target_branch)
     diff_context = f"\n--------------------------------------------------\n【変更差分 (Diff)】\n{diff_text}\n--------------------------------------------------\n" if diff_text.strip() else "(No changes detected)"
 
     # プロンプトの読み込み（圧縮版）
@@ -174,6 +208,8 @@ def run_multi_llm_review(target_branch="main", issue_num=None, mode="auto", spec
         issue_context=issue_context,
         spec_text=spec_text,
         diff_context=diff_context,
+        pre_check_summary=pre_result.summary,
+        local_llm_analysis=local_analysis,
     )
 
     # StreamManagerの初期化

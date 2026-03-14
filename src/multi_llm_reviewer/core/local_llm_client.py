@@ -203,3 +203,54 @@ def is_ollama_available() -> bool:
         return True
     except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         return False
+
+
+def run_local_llm_pre_check(diff_text: str) -> str:
+    """Gate 2: ローカルLLMによる軽量コード品質チェックを実行する。
+
+    命名規則・コードスメル・重複コード・docstring欠落・例外握り潰しなど、
+    フロンティアLLMを消費せずに検出できる問題を列挙する。
+
+    Args:
+        diff_text: git diff テキスト
+
+    Returns:
+        ローカルLLMの分析結果（文字列）。Ollama利用不可または失敗時は空文字 ""。
+    """
+    if not is_ollama_available():
+        return ""
+
+    prompt = f"""あなたはコード品質チェックの専門家です。
+以下のコード差分を分析し、以下の観点でのみ問題点を箇条書きで列挙してください。
+問題がなければ「問題なし」とだけ答えてください。
+
+【チェック観点】
+- 命名規則の混在（snake_case/camelCase 等）
+- コードスメル（関数が長すぎる、ネストが深い、引数が多すぎる）
+- docstring・型ヒントの欠落（公開関数・クラス）
+- 例外の握り潰し（except: pass 等）
+- デバッグコードの混入（print文等）
+- コメントとコードの矛盾
+
+【制約】
+- セキュリティ・バグ・設計の深い判断は不要。形式的な問題のみ指摘。
+- 各指摘は「ファイル名または関数名: 問題の概要」の形式で。
+- 日本語で回答。
+
+=== Code Diff ===
+{diff_text}
+================
+"""
+
+    local_slot = getattr(config, "LOCAL_LLM_REVIEWER_SLOT", None)
+    cmds = local_slot.get("cmds") if isinstance(local_slot, dict) else None
+    cmd = cmds[0] if cmds else ["ollama", "run", "llama3"]
+
+    status, output = execute_local_llm_cli(cmd, input_text=prompt)
+    if status != "SUCCESS":
+        print(
+            f"[INFO] Gate 2 (Local LLM pre-check) failed: {status}. Skipping.",
+            file=sys.stderr,
+        )
+        return ""
+    return output.strip()
