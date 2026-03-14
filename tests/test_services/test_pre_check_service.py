@@ -275,15 +275,41 @@ class TestCheckTypescriptSyntax:
 
     def test_blocks_on_ts_syntax_error(self, tmp_path):
         ts_file = tmp_path / "bad.ts"
-        ts_file.write_text("const x: number = 'hello';\n")
+        ts_file.write_text("const x = ;\n")
         mock_result = MagicMock()
         mock_result.returncode = 1
-        mock_result.stdout = "error TS2322: Type 'string' is not assignable to type 'number'."
+        mock_result.stdout = "bad.ts(1,11): error TS1005: ';' expected."
         mock_result.stderr = ""
         with patch("multi_llm_reviewer.services.pre_check_service._find_tsc", return_value="tsc"), \
              patch("subprocess.run", return_value=mock_result):
             issues, warnings = pre_check_service.check_typescript_syntax([str(ts_file)])
-        assert len(issues) == 1
+        assert len(issues) == 1  # TS1xxx → BLOCK
+        assert len(warnings) == 0
+
+    def test_warns_on_ts_type_error_not_blocks(self, tmp_path):
+        """TS2xxx（型エラー）はBLOCKではなくWARNになること。"""
+        ts_file = tmp_path / "typed.ts"
+        ts_file.write_text("const x: number = 'hello';\n")
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = "typed.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'."
+        mock_result.stderr = ""
+        with patch("multi_llm_reviewer.services.pre_check_service._find_tsc", return_value="tsc"), \
+             patch("subprocess.run", return_value=mock_result):
+            issues, warnings = pre_check_service.check_typescript_syntax([str(ts_file)])
+        assert len(issues) == 0  # TS2xxx → not BLOCK
+        assert len(warnings) == 1  # → WARN
+
+    def test_warns_on_tsc_timeout(self, tmp_path):
+        """tsc タイムアウト時はWARNになること。"""
+        import subprocess as sp
+        ts_file = tmp_path / "slow.ts"
+        ts_file.write_text("const x = 1;\n")
+        with patch("multi_llm_reviewer.services.pre_check_service._find_tsc", return_value="tsc"), \
+             patch("subprocess.run", side_effect=sp.TimeoutExpired("tsc", 120)):
+            issues, warnings = pre_check_service.check_typescript_syntax([str(ts_file)])
+        assert len(issues) == 0
+        assert len(warnings) == 1
 
     def test_passes_on_valid_ts(self, tmp_path):
         ts_file = tmp_path / "good.ts"

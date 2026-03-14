@@ -217,10 +217,20 @@ def check_typescript_syntax(changed_files: List[str]) -> CheckResult:
             [tsc, "--noEmit", "--skipLibCheck"] + ts_files,
             capture_output=True,
             text=True,
+            timeout=120,
         )
         if result.returncode != 0:
             output = (result.stdout or result.stderr or "").strip()
-            return [f"TypeScript構文エラーが検出されました。LLMレビュー前に修正してください。\n{output}"], []
+            # TS1xxx = parse/syntax errors (blocking); TS2xxx+ = type/semantic errors (warn only)
+            syntax_errors = [l for l in output.splitlines() if re.search(r'error TS1\d{3}:', l)]
+            if syntax_errors:
+                return [
+                    f"TypeScript構文エラーが検出されました。LLMレビュー前に修正してください。\n"
+                    + "\n".join(syntax_errors)
+                ], []
+            return [], [f"TypeScript型エラーが検出されました（構文は正常）。確認してください。\n{output}"]
+    except subprocess.TimeoutExpired:
+        return [], ["tsc の実行がタイムアウトしました（120秒）。TypeScript構文チェックをスキップします。"]
     except Exception as e:
         return [], [f"tsc の実行に失敗しました: {e}"]
 
