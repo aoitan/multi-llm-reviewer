@@ -416,6 +416,22 @@ class TestCheckAssertLessTests:
         issues, warnings = pre_check_service.check_assert_less_tests([str(test_file)])
         assert len(warnings) == 0
 
+    def test_no_false_positive_on_def_test_in_string_literal(self, tmp_path):
+        """文字列リテラル内の def test_ は誤検知しないこと（AST解析）。"""
+        test_file = tmp_path / "test_example.py"
+        test_file.write_text(textwrap.dedent("""\
+            import textwrap
+            def test_writes_test_file(tmp_path):
+                content = textwrap.dedent(\"\"\"
+                    def test_something():
+                        x = 1
+                \"\"\")
+                (tmp_path / "t.py").write_text(content)
+                assert (tmp_path / "t.py").exists()
+        """))
+        issues, warnings = pre_check_service.check_assert_less_tests([str(test_file)])
+        assert len(warnings) == 0  # 文字列内の def test_ は無視される
+
 
 # ---------------------------------------------------------------------------
 # check_skipped_tests
@@ -453,6 +469,18 @@ class TestCheckSkippedTests:
         src_file.write_text("@some_decorator\ndef foo(): pass\n")
         issues, warnings = pre_check_service.check_skipped_tests([str(src_file)], threshold=3)
         assert len(warnings) == 0
+
+    def test_no_false_positive_on_skip_in_string_literal(self, tmp_path):
+        """文字列リテラル内の @pytest.mark.skip は誤検知しないこと（AST解析）。"""
+        test_file = tmp_path / "test_example.py"
+        test_file.write_text(textwrap.dedent("""\
+            def test_generates_skip_code(tmp_path):
+                code = '@pytest.mark.skip\\ndef test_x(): pass'
+                (tmp_path / "t.py").write_text(code)
+                assert (tmp_path / "t.py").exists()
+        """))
+        issues, warnings = pre_check_service.check_skipped_tests([str(test_file)], threshold=1)
+        assert len(warnings) == 0  # 文字列内の @skip は無視される
 
 
 # ---------------------------------------------------------------------------

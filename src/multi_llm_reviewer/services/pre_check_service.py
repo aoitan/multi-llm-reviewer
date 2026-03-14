@@ -254,8 +254,23 @@ def check_missing_tests(changed_files: List[str]) -> CheckResult:
     return [], warnings
 
 
+def _has_assertion_in_func(node: "ast.FunctionDef") -> bool:  # type: ignore[name-defined]
+    """AST関数ノード内に assert 文または pytest.raises 呼び出しがあるか確認する。"""
+    import ast
+    for child in ast.walk(node):
+        if isinstance(child, ast.Assert):
+            return True
+        if isinstance(child, ast.Call):
+            func = child.func
+            # pytest.raises(...)
+            if isinstance(func, ast.Attribute) and func.attr == "raises":
+                return True
+    return False
+
+
 def check_assert_less_tests(changed_files: List[str]) -> CheckResult:
-    """テストファイル内でアサーションのない test_ 関数を検出する。"""
+    """テストファイル内でアサーションのない test_ 関数を検出する（AST解析）。"""
+    import ast
     warnings: List[str] = []
     test_files = [
         f for f in changed_files
@@ -263,23 +278,33 @@ def check_assert_less_tests(changed_files: List[str]) -> CheckResult:
     ]
     for filepath in test_files:
         source = Path(filepath).read_text(encoding="utf-8")
-        # 関数ごとに解析（クラスメソッドのインデントも考慮）
-        func_blocks = re.split(r'\n(?=\s*def test_)', source)
-        for block in func_blocks:
-            if not re.match(r'\s*def test_', block):
-                continue
-            has_assert = "assert " in block or "pytest.raises" in block
-            if not has_assert:
-                match = re.match(r'\s*def (test_\w+)', block)
-                func_name = match.group(1) if match else "unknown"
-                warnings.append(
-                    f"`{filepath}`: `{func_name}` にアサーションがありません（偽陽性テストの疑い）。"
-                )
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            continue  # 構文エラーは check_python_syntax で検出済み
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
+                if not _has_assertion_in_func(node):
+                    warnings.append(
+                        f"`{filepath}`: `{node.name}` にアサーションがありません（偽陽性テストの疑い）。"
+                    )
     return [], warnings
 
 
+def _is_skip_decorator(decorator: "ast.expr") -> bool:  # type: ignore[name-defined]
+    """デコレータノードが @pytest.mark.skip / @unittest.skip かどうか判定する。"""
+    import ast
+    # @pytest.mark.skip または @pytest.mark.skip(reason=...)
+    if isinstance(decorator, ast.Attribute) and decorator.attr == "skip":
+        return True
+    if isinstance(decorator, ast.Call):
+        return _is_skip_decorator(decorator.func)
+    return False
+
+
 def check_skipped_tests(changed_files: List[str], threshold: int = 3) -> CheckResult:
-    """変更ファイル内の @pytest.mark.skip / @unittest.skip の合計数が閾値を超えたら警告する。"""
+    """変更ファイル内の @pytest.mark.skip / @unittest.skip の合計数が閾値を超えたら警告する（AST解析）。"""
+    import ast
     total_skips = 0
     test_files = [
         f for f in changed_files
@@ -287,8 +312,15 @@ def check_skipped_tests(changed_files: List[str], threshold: int = 3) -> CheckRe
     ]
     for filepath in test_files:
         source = Path(filepath).read_text(encoding="utf-8")
-        for decorator in _SKIP_DECORATORS:
-            total_skips += source.count(decorator)
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for decorator in node.decorator_list:
+                    if _is_skip_decorator(decorator):
+                        total_skips += 1
 
     if total_skips >= threshold:
         return [], [
