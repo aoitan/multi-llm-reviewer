@@ -507,3 +507,309 @@ class TestRunAllChecks:
         diff = "+def foo():\n+    pass\n"
         result = pre_check_service.run_all_checks(diff, [str(good_py)])
         assert result.has_blocking is False
+
+
+# ---------------------------------------------------------------------------
+# check_lint
+# ---------------------------------------------------------------------------
+
+class TestCheckLint:
+    def test_skips_when_command_not_configured(self):
+        """PRE_CHECK_COMMANDS['lint'] が None の場合はスキップ（issues/warnings 空）。"""
+        from multi_llm_reviewer.core import config as cfg
+        original = getattr(cfg, "PRE_CHECK_COMMANDS", None)
+        cfg.PRE_CHECK_COMMANDS = {"lint": None, "test": None, "coverage": None}
+        try:
+            issues, warnings = pre_check_service.check_lint(["src/foo.py"])
+            assert issues == []
+            assert warnings == []
+        finally:
+            cfg.PRE_CHECK_COMMANDS = original
+
+    def test_warns_on_lint_failure(self):
+        """lint コマンドが exit code 1 を返した場合 WARN が返ること。"""
+        from multi_llm_reviewer.core import config as cfg
+        original = getattr(cfg, "PRE_CHECK_COMMANDS", None)
+        cfg.PRE_CHECK_COMMANDS = {"lint": ["ruff", "check"], "test": None, "coverage": None}
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = "src/foo.py:1:1: E302 expected 2 blank lines"
+        mock_result.stderr = ""
+        try:
+            with patch("subprocess.run", return_value=mock_result):
+                issues, warnings = pre_check_service.check_lint(["src/foo.py"])
+            assert issues == []
+            assert len(warnings) == 1
+        finally:
+            cfg.PRE_CHECK_COMMANDS = original
+
+    def test_passes_on_lint_success(self):
+        """lint コマンドが exit code 0 を返した場合は何も返さないこと。"""
+        from multi_llm_reviewer.core import config as cfg
+        original = getattr(cfg, "PRE_CHECK_COMMANDS", None)
+        cfg.PRE_CHECK_COMMANDS = {"lint": ["ruff", "check"], "test": None, "coverage": None}
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = ""
+        try:
+            with patch("subprocess.run", return_value=mock_result):
+                issues, warnings = pre_check_service.check_lint(["src/foo.py"])
+            assert issues == []
+            assert warnings == []
+        finally:
+            cfg.PRE_CHECK_COMMANDS = original
+
+    def test_passes_separator_before_files(self):
+        """変更ファイルのパスが -- の後に渡されること（オプション誤認防止）。"""
+        from multi_llm_reviewer.core import config as cfg
+        original = getattr(cfg, "PRE_CHECK_COMMANDS", None)
+        cfg.PRE_CHECK_COMMANDS = {"lint": ["ruff", "check"], "test": None, "coverage": None}
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = ""
+        captured_cmd = {}
+        def mock_run(cmd, **kwargs):
+            captured_cmd["cmd"] = cmd
+            return mock_result
+        try:
+            with patch("subprocess.run", side_effect=mock_run):
+                pre_check_service.check_lint(["-bad-filename.py"])
+            assert "--" in captured_cmd["cmd"]
+            assert captured_cmd["cmd"].index("--") < captured_cmd["cmd"].index("-bad-filename.py")
+        finally:
+            cfg.PRE_CHECK_COMMANDS = original
+
+    def test_warns_on_command_not_found(self):
+        """lint コマンドが見つからない場合 WARN が返ること。"""
+        from multi_llm_reviewer.core import config as cfg
+        original = getattr(cfg, "PRE_CHECK_COMMANDS", None)
+        cfg.PRE_CHECK_COMMANDS = {"lint": ["nonexistent-linter"], "test": None, "coverage": None}
+        try:
+            with patch("subprocess.run", side_effect=FileNotFoundError("not found")):
+                issues, warnings = pre_check_service.check_lint(["src/foo.py"])
+            assert issues == []
+            assert len(warnings) == 1
+        finally:
+            cfg.PRE_CHECK_COMMANDS = original
+
+
+# ---------------------------------------------------------------------------
+# check_tests_pass
+# ---------------------------------------------------------------------------
+
+class TestCheckTestsPass:
+    def test_skips_when_command_not_configured(self):
+        """PRE_CHECK_COMMANDS['test'] が None の場合はスキップ。"""
+        from multi_llm_reviewer.core import config as cfg
+        original = getattr(cfg, "PRE_CHECK_COMMANDS", None)
+        cfg.PRE_CHECK_COMMANDS = {"lint": None, "test": None, "coverage": None}
+        try:
+            issues, warnings = pre_check_service.check_tests_pass()
+            assert issues == []
+            assert warnings == []
+        finally:
+            cfg.PRE_CHECK_COMMANDS = original
+
+    def test_blocks_on_test_failure(self):
+        """テストコマンドが exit code 1 を返した場合 BLOCK が返ること。"""
+        from multi_llm_reviewer.core import config as cfg
+        original = getattr(cfg, "PRE_CHECK_COMMANDS", None)
+        cfg.PRE_CHECK_COMMANDS = {"lint": None, "test": ["pytest"], "coverage": None}
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = "FAILED tests/test_foo.py::test_bar"
+        mock_result.stderr = ""
+        try:
+            with patch("subprocess.run", return_value=mock_result):
+                issues, warnings = pre_check_service.check_tests_pass()
+            assert len(issues) == 1  # BLOCK
+            assert warnings == []
+        finally:
+            cfg.PRE_CHECK_COMMANDS = original
+
+    def test_passes_on_test_success(self):
+        """テストコマンドが exit code 0 を返した場合は何も返さないこと。"""
+        from multi_llm_reviewer.core import config as cfg
+        original = getattr(cfg, "PRE_CHECK_COMMANDS", None)
+        cfg.PRE_CHECK_COMMANDS = {"lint": None, "test": ["pytest"], "coverage": None}
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "5 passed in 0.10s"
+        mock_result.stderr = ""
+        try:
+            with patch("subprocess.run", return_value=mock_result):
+                issues, warnings = pre_check_service.check_tests_pass()
+            assert issues == []
+            assert warnings == []
+        finally:
+            cfg.PRE_CHECK_COMMANDS = original
+
+    def test_warns_on_command_not_found(self):
+        """テストコマンドが見つからない場合 WARN が返ること。"""
+        from multi_llm_reviewer.core import config as cfg
+        original = getattr(cfg, "PRE_CHECK_COMMANDS", None)
+        cfg.PRE_CHECK_COMMANDS = {"lint": None, "test": ["nonexistent-runner"], "coverage": None}
+        try:
+            with patch("subprocess.run", side_effect=FileNotFoundError("not found")):
+                issues, warnings = pre_check_service.check_tests_pass()
+            assert issues == []
+            assert len(warnings) == 1
+        finally:
+            cfg.PRE_CHECK_COMMANDS = original
+
+
+# ---------------------------------------------------------------------------
+# check_coverage
+# ---------------------------------------------------------------------------
+
+class TestCheckCoverage:
+    def test_skips_when_command_not_configured(self):
+        """PRE_CHECK_COMMANDS['coverage'] が None の場合はスキップ。"""
+        from multi_llm_reviewer.core import config as cfg
+        original = getattr(cfg, "PRE_CHECK_COMMANDS", None)
+        cfg.PRE_CHECK_COMMANDS = {"lint": None, "test": None, "coverage": None}
+        try:
+            issues, warnings = pre_check_service.check_coverage()
+            assert issues == []
+            assert warnings == []
+        finally:
+            cfg.PRE_CHECK_COMMANDS = original
+
+    def test_warns_when_coverage_below_threshold(self):
+        """coverage が閾値未満の場合 WARN が返ること。"""
+        from multi_llm_reviewer.core import config as cfg
+        orig_cmd = getattr(cfg, "PRE_CHECK_COMMANDS", None)
+        orig_thr = getattr(cfg, "COVERAGE_THRESHOLD", None)
+        cfg.PRE_CHECK_COMMANDS = {"lint": None, "test": None, "coverage": ["pytest", "--cov"]}
+        cfg.COVERAGE_THRESHOLD = 80.0
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "TOTAL    500    200    60%"
+        mock_result.stderr = ""
+        try:
+            with patch("subprocess.run", return_value=mock_result):
+                issues, warnings = pre_check_service.check_coverage()
+            assert issues == []
+            assert len(warnings) == 1
+            assert "60" in warnings[0]
+        finally:
+            cfg.PRE_CHECK_COMMANDS = orig_cmd
+            cfg.COVERAGE_THRESHOLD = orig_thr
+
+    def test_passes_when_coverage_meets_threshold(self):
+        """coverage が閾値以上の場合は何も返さないこと。"""
+        from multi_llm_reviewer.core import config as cfg
+        orig_cmd = getattr(cfg, "PRE_CHECK_COMMANDS", None)
+        orig_thr = getattr(cfg, "COVERAGE_THRESHOLD", None)
+        cfg.PRE_CHECK_COMMANDS = {"lint": None, "test": None, "coverage": ["pytest", "--cov"]}
+        cfg.COVERAGE_THRESHOLD = 80.0
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "TOTAL    500    50    90%"
+        mock_result.stderr = ""
+        try:
+            with patch("subprocess.run", return_value=mock_result):
+                issues, warnings = pre_check_service.check_coverage()
+            assert issues == []
+            assert warnings == []
+        finally:
+            cfg.PRE_CHECK_COMMANDS = orig_cmd
+            cfg.COVERAGE_THRESHOLD = orig_thr
+
+    def test_warns_when_coverage_not_parseable(self):
+        """coverage 出力から % が parse できない場合 WARN が返ること。"""
+        from multi_llm_reviewer.core import config as cfg
+        orig_cmd = getattr(cfg, "PRE_CHECK_COMMANDS", None)
+        orig_thr = getattr(cfg, "COVERAGE_THRESHOLD", None)
+        cfg.PRE_CHECK_COMMANDS = {"lint": None, "test": None, "coverage": ["pytest", "--cov"]}
+        cfg.COVERAGE_THRESHOLD = 80.0
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "no coverage data collected"
+        mock_result.stderr = ""
+        try:
+            with patch("subprocess.run", return_value=mock_result):
+                issues, warnings = pre_check_service.check_coverage()
+            assert issues == []
+            assert len(warnings) == 1
+        finally:
+            cfg.PRE_CHECK_COMMANDS = orig_cmd
+            cfg.COVERAGE_THRESHOLD = orig_thr
+
+    def test_passes_with_decimal_coverage_above_threshold(self):
+        """小数点付き coverage（例: 90.5%）が閾値以上なら WARN なし。"""
+        from multi_llm_reviewer.core import config as cfg
+        orig_cmd = getattr(cfg, "PRE_CHECK_COMMANDS", None)
+        orig_thr = getattr(cfg, "COVERAGE_THRESHOLD", None)
+        cfg.PRE_CHECK_COMMANDS = {"lint": None, "test": None, "coverage": ["pytest", "--cov"]}
+        cfg.COVERAGE_THRESHOLD = 80.0
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "TOTAL    500    45    90.5%"
+        mock_result.stderr = ""
+        try:
+            with patch("subprocess.run", return_value=mock_result):
+                issues, warnings = pre_check_service.check_coverage()
+            assert issues == []
+            assert warnings == []
+        finally:
+            cfg.PRE_CHECK_COMMANDS = orig_cmd
+            cfg.COVERAGE_THRESHOLD = orig_thr
+
+    def test_warns_with_decimal_coverage_below_threshold(self):
+        """小数点付き coverage（例: 79.9%）が閾値未満なら WARN が返ること。"""
+        from multi_llm_reviewer.core import config as cfg
+        orig_cmd = getattr(cfg, "PRE_CHECK_COMMANDS", None)
+        orig_thr = getattr(cfg, "COVERAGE_THRESHOLD", None)
+        cfg.PRE_CHECK_COMMANDS = {"lint": None, "test": None, "coverage": ["pytest", "--cov"]}
+        cfg.COVERAGE_THRESHOLD = 80.0
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "TOTAL    500    100    79.9%"
+        mock_result.stderr = ""
+        try:
+            with patch("subprocess.run", return_value=mock_result):
+                issues, warnings = pre_check_service.check_coverage()
+            assert issues == []
+            assert len(warnings) == 1
+        finally:
+            cfg.PRE_CHECK_COMMANDS = orig_cmd
+            cfg.COVERAGE_THRESHOLD = orig_thr
+
+    def test_warns_on_nonzero_returncode(self):
+        """coverage コマンドが非ゼロで終了した場合 WARN が返ること。"""
+        from multi_llm_reviewer.core import config as cfg
+        orig_cmd = getattr(cfg, "PRE_CHECK_COMMANDS", None)
+        orig_thr = getattr(cfg, "COVERAGE_THRESHOLD", None)
+        cfg.PRE_CHECK_COMMANDS = {"lint": None, "test": None, "coverage": ["pytest", "--cov"]}
+        cfg.COVERAGE_THRESHOLD = 80.0
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = "ERROR: some error"
+        mock_result.stderr = ""
+        try:
+            with patch("subprocess.run", return_value=mock_result):
+                issues, warnings = pre_check_service.check_coverage()
+            assert issues == []
+            assert len(warnings) == 1
+        finally:
+            cfg.PRE_CHECK_COMMANDS = orig_cmd
+            cfg.COVERAGE_THRESHOLD = orig_thr
+
+    def test_warns_on_command_not_found(self):
+        """coverage コマンドが見つからない場合 WARN が返ること。"""
+        from multi_llm_reviewer.core import config as cfg
+        orig_cmd = getattr(cfg, "PRE_CHECK_COMMANDS", None)
+        orig_thr = getattr(cfg, "COVERAGE_THRESHOLD", None)
+        cfg.PRE_CHECK_COMMANDS = {"lint": None, "test": None, "coverage": ["nonexistent"]}
+        cfg.COVERAGE_THRESHOLD = 80.0
+        try:
+            with patch("subprocess.run", side_effect=FileNotFoundError("not found")):
+                issues, warnings = pre_check_service.check_coverage()
+            assert issues == []
+            assert len(warnings) == 1
+        finally:
+            cfg.PRE_CHECK_COMMANDS = orig_cmd
+            cfg.COVERAGE_THRESHOLD = orig_thr

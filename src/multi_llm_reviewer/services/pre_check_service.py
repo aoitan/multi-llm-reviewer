@@ -331,6 +331,120 @@ def check_skipped_tests(changed_files: List[str], threshold: int = 3) -> CheckRe
 
 
 # ---------------------------------------------------------------------------
+# Gate 1: 設定ベースの lint / test / coverage チェック
+# ---------------------------------------------------------------------------
+
+def _get_pre_check_cmd(key: str) -> Optional[List[str]]:
+    """PRE_CHECK_COMMANDS から指定キーのコマンドを取得する。未設定/None は None を返す。"""
+    cmds = getattr(config, "PRE_CHECK_COMMANDS", {})
+    if not isinstance(cmds, dict):
+        return None
+    val = cmds.get(key)
+    return val if isinstance(val, list) and val else None
+
+
+def check_lint(changed_files: List[str]) -> CheckResult:
+    """lint コマンドを実行し、失敗した場合 WARN を返す。
+    PRE_CHECK_COMMANDS["lint"] が None の場合はスキップ。
+    """
+    cmd = _get_pre_check_cmd("lint")
+    if cmd is None:
+        return [], []
+    if not changed_files:
+        return [], []
+
+    try:
+        result = subprocess.run(
+            cmd + ["--"] + changed_files,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode != 0:
+            output = (result.stdout or result.stderr or "").strip()
+            return [], [f"lint チェックで問題が検出されました。LLMレビュー前に確認してください。\n{output}"]
+    except subprocess.TimeoutExpired:
+        return [], ["lint コマンドがタイムアウトしました（120秒）。スキップします。"]
+    except Exception as e:
+        return [], [f"lint コマンドの実行に失敗しました: {e}"]
+
+    return [], []
+
+
+def check_tests_pass() -> CheckResult:
+    """テストコマンドを実行し、失敗した場合 BLOCK を返す。
+    PRE_CHECK_COMMANDS["test"] が None の場合はスキップ。
+    """
+    cmd = _get_pre_check_cmd("test")
+    if cmd is None:
+        return [], []
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if result.returncode != 0:
+            output = (result.stdout or result.stderr or "").strip()
+            return [f"テストが失敗しています。LLMレビュー前に修正してください。\n{output}"], []
+    except subprocess.TimeoutExpired:
+        return [], ["テストコマンドがタイムアウトしました（300秒）。スキップします。"]
+    except Exception as e:
+        return [], [f"テストコマンドの実行に失敗しました: {e}"]
+
+    return [], []
+
+
+def check_coverage() -> CheckResult:
+    """coverage コマンドを実行し、閾値を下回った場合 WARN を返す。
+    PRE_CHECK_COMMANDS["coverage"] が None の場合はスキップ。
+    出力の最終 TOTAL 行から "XX%" を parse する。
+    """
+    cmd = _get_pre_check_cmd("coverage")
+    if cmd is None:
+        return [], []
+
+    threshold = float(getattr(config, "COVERAGE_THRESHOLD", 80.0))
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if result.returncode != 0:
+            output = (result.stdout or result.stderr or "").strip()
+            return [], [f"coverage コマンドが非ゼロで終了しました。出力を確認してください。\n{output}"]
+        output = (result.stdout or result.stderr or "").strip()
+
+        # "TOTAL ... XX.X%" 形式の行を探す（小数点以下も考慮）
+        coverage_pct: Optional[float] = None
+        for line in reversed(output.splitlines()):
+            m = re.search(r'\bTOTAL\b.*?(\d+(?:\.\d+)?)%', line)
+            if m:
+                coverage_pct = float(m.group(1))
+                break
+
+        if coverage_pct is None:
+            return [], [f"coverage の計測結果を parse できませんでした。出力を確認してください。\n{output}"]
+
+        if coverage_pct < threshold:
+            return [], [
+                f"テストカバレッジが {coverage_pct:.1f}% で閾値 {threshold:.1f}% を下回っています。"
+                "カバレッジの向上を検討してください。"
+            ]
+    except subprocess.TimeoutExpired:
+        return [], ["coverage コマンドがタイムアウトしました（300秒）。スキップします。"]
+    except Exception as e:
+        return [], [f"coverage コマンドの実行に失敗しました: {e}"]
+
+    return [], []
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -351,6 +465,9 @@ def run_all_checks(diff_text: str, changed_files: List[str]) -> PreCheckResult:
         lambda: check_missing_tests(changed_files),
         lambda: check_assert_less_tests(changed_files),
         lambda: check_skipped_tests(changed_files),
+        lambda: check_lint(changed_files),
+        lambda: check_tests_pass(),
+        lambda: check_coverage(),
     ]
 
     for check_fn in checks:

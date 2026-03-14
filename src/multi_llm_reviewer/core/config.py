@@ -106,3 +106,22 @@ LARGE_CHANGESET_THRESHOLD = 10
 # --- レビュー内レビュー抑止 ---
 # True の場合、レビュー実行時のプロンプトに「Skills/AGENTSトリガーを使わない」指示を追加する
 DISABLE_SKILLS_IN_NESTED_REVIEW = True
+
+# --- Gate 1: 設定ベースの lint/test/coverage チェック ---
+# 各コマンドを list 形式で設定する。None の場合はそのチェックをスキップする。
+# プロジェクトごとに適切なコマンドを設定すること。
+# 例:
+#   "lint":     ["ruff", "check"]            # または ["npm", "run", "lint"]
+#   "test":     ["uv", "run", "pytest"]      # または ["npm", "test"]
+#   "coverage": ["uv", "run", "pytest", "--cov", "--cov-report=term-missing"]
+#
+# lint の場合は変更ファイルのパスが引数として自動付与される。
+# test / coverage はコマンドをそのまま実行する。
+PRE_CHECK_COMMANDS: dict = {
+    "lint":     None,
+    "test":     None,
+    "coverage": None,
+}
+
+# coverage チェックの閾値（%）。coverage がこの値を下回った場合 WARN を出す。
+COVERAGE_THRESHOLD: float = 80.0
