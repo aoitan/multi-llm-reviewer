@@ -14,8 +14,8 @@ from typing import List, Optional, Tuple
 
 from multi_llm_reviewer.core import config
 
-# (issues: List[str], warnings: List[str])
-CheckResult = Tuple[List[str], List[str]]
+# (issues: List[str], warnings: List[str], passed: List[str])
+CheckResult = Tuple[List[str], List[str], List[str]]
 
 _SECRETS_PATTERN = re.compile(
     r'(?i)(api[_-]?key|secret|password|token|aws_access_key)[_a-z]*\s*[=:]\s*["\'][^"\']{8,}["\']'
@@ -31,6 +31,7 @@ class PreCheckResult:
     """ルールベース事前チェックの結果。"""
     blocking_issues: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    passed_checks: List[str] = field(default_factory=list)
 
     @property
     def has_blocking(self) -> bool:
@@ -38,27 +39,29 @@ class PreCheckResult:
 
     @property
     def summary(self) -> str:
-        if not self.blocking_issues and not self.warnings:
+        if not self.blocking_issues and not self.warnings and not self.passed_checks:
             return ""
         lines = []
         for issue in self.blocking_issues:
             lines.append(f"- ❌ [BLOCK] {issue}")
         for warn in self.warnings:
             lines.append(f"- ⚠️ [WARN] {warn}")
+        for passed in self.passed_checks:
+            lines.append(f"- ✅ [PASS] {passed}")
         return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
 # Individual check functions
-# Each returns (blocking_issues, warnings)
+# Each returns (blocking_issues, warnings, passed_checks)
 # ---------------------------------------------------------------------------
 
 def check_empty_diff(diff_text: str) -> CheckResult:
     """差分がゼロまたは空の場合を検出する。"""
     stripped = diff_text.strip()
     if not stripped or stripped == "(No changes detected)":
-        return ["変更がありません。レビュー対象の差分が存在しません。"], []
-    return [], []
+        return ["変更がありません。レビュー対象の差分が存在しません。"], [], []
+    return [], [], []
 
 
 def check_conflict_markers(diff_text: str) -> CheckResult:
@@ -72,16 +75,16 @@ def check_conflict_markers(diff_text: str) -> CheckResult:
             continue
         content = line[1:]
         if any(content.startswith(m) for m in _CONFLICT_MARKER_PREFIXES):
-            return ["マージコンフリクトマーカーが残っています。解消してから再実行してください。"], []
+            return ["マージコンフリクトマーカーが残っています。解消してから再実行してください。"], [], []
         if content.rstrip() == _CONFLICT_MARKER_EXACT:
-            return ["マージコンフリクトマーカーが残っています。解消してから再実行してください。"], []
-    return [], []
+            return ["マージコンフリクトマーカーが残っています。解消してから再実行してください。"], [], []
+    return [], [], []
 
 
 def check_only_excluded_files(changed_files: List[str]) -> CheckResult:
     """変更ファイルが全て除外パターン（ロックファイル・バイナリ等）のみの場合を検出する。"""
     if not changed_files:
-        return [], []
+        return [], [], []
     exclude_patterns = getattr(config, "EXCLUDE_PATTERNS", [])
     for filepath in changed_files:
         filename = Path(filepath).name
@@ -91,8 +94,8 @@ def check_only_excluded_files(changed_files: List[str]) -> CheckResult:
             for pat in exclude_patterns
         )
         if not matched:
-            return [], []
-    return ["レビュー対象のソースコードがありません（ロックファイル・バイナリのみの変更）。"], []
+            return [], [], []
+    return ["レビュー対象のソースコードがありません（ロックファイル・バイナリのみの変更）。"], [], []
 
 
 def _is_test_file_path(filepath: str) -> bool:
@@ -118,8 +121,8 @@ def check_secrets(diff_text: str) -> CheckResult:
         if current_file and _is_test_file_path(current_file):
             continue
         if _SECRETS_PATTERN.search(line[1:]):
-            return ["機密情報の可能性があるハードコードが検出されました。コミット前に確認してください。"], []
-    return [], []
+            return ["機密情報の可能性があるハードコードが検出されました。コミット前に確認してください。"], [], []
+    return [], [], []
 
 
 def check_large_single_file_change(diff_text: str, threshold: int = 500) -> CheckResult:
@@ -147,7 +150,7 @@ def check_large_single_file_change(diff_text: str, threshold: int = 500) -> Chec
             f"`{current_file}` の変更が大きすぎます（+{added_count}行）。"
             "コミットを分割するか `--reviewers all` で実行してください。"
         )
-    return [], warnings
+    return [], warnings, []
 
 
 def check_todo_fixme(diff_text: str) -> CheckResult:
@@ -162,8 +165,8 @@ def check_todo_fixme(diff_text: str) -> CheckResult:
                 break
     if found:
         markers_str = ", ".join(sorted(set(found)))
-        return [], [f"未解決の {markers_str} コメントが追加されています。意図的なものか確認してください。"]
-    return [], []
+        return [], [f"未解決の {markers_str} コメントが追加されています。意図的なものか確認してください。"], []
+    return [], [], []
 
 
 def check_python_syntax(changed_files: List[str]) -> CheckResult:
@@ -179,7 +182,7 @@ def check_python_syntax(changed_files: List[str]) -> CheckResult:
             py_compile.compile(filepath, doraise=True)
         except py_compile.PyCompileError as e:
             issues.append(f"Python構文エラー: {filepath} — {e}")
-    return issues, []
+    return issues, [], []
 
 
 def _find_tsc() -> Optional[str]:
@@ -198,19 +201,19 @@ def check_typescript_syntax(changed_files: List[str]) -> CheckResult:
     # まず .ts/.tsx ファイルがあるか確認（存在チェック前）
     ts_candidates = [f for f in changed_files if f.endswith((".ts", ".tsx"))]
     if not ts_candidates:
-        return [], []
+        return [], [], []
 
     tsc = _find_tsc()
     if tsc is None:
         return [], [
             "TypeScriptファイルが含まれていますが `tsc` が見つかりません。"
             "構文チェックをスキップします。（`npm install typescript` または `npm install -g typescript` で解決できます）"
-        ]
+        ], []
 
     # 実際に存在するファイルのみを構文チェック対象にする
     ts_files = [f for f in ts_candidates if Path(f).exists()]
     if not ts_files:
-        return [], []
+        return [], [], []
 
     try:
         result = subprocess.run(
@@ -227,14 +230,14 @@ def check_typescript_syntax(changed_files: List[str]) -> CheckResult:
                 return [
                     f"TypeScript構文エラーが検出されました。LLMレビュー前に修正してください。\n"
                     + "\n".join(syntax_errors)
-                ], []
-            return [], [f"TypeScript型エラーが検出されました（構文は正常）。確認してください。\n{output}"]
+                ], [], []
+            return [], [f"TypeScript型エラーが検出されました（構文は正常）。確認してください。\n{output}"], []
     except subprocess.TimeoutExpired:
-        return [], ["tsc の実行がタイムアウトしました（120秒）。TypeScript構文チェックをスキップします。"]
+        return [], ["tsc の実行がタイムアウトしました（120秒）。TypeScript構文チェックをスキップします。"], []
     except Exception as e:
-        return [], [f"tsc の実行に失敗しました: {e}"]
+        return [], [f"tsc の実行に失敗しました: {e}"], []
 
-    return [], []
+    return [], [], []
 
 
 def check_missing_tests(changed_files: List[str]) -> CheckResult:
@@ -251,7 +254,7 @@ def check_missing_tests(changed_files: List[str]) -> CheckResult:
                 f"`{src}` が変更されていますが、対応するテスト (`{expected_test_name}.py`) "
                 "が変更されていません。テストの更新を検討してください。"
             )
-    return [], warnings
+    return [], warnings, []
 
 
 def _has_assertion_in_func(node: "ast.FunctionDef") -> bool:  # type: ignore[name-defined]
@@ -288,7 +291,7 @@ def check_assert_less_tests(changed_files: List[str]) -> CheckResult:
                     warnings.append(
                         f"`{filepath}`: `{node.name}` にアサーションがありません（偽陽性テストの疑い）。"
                     )
-    return [], warnings
+    return [], warnings, []
 
 
 def _is_skip_decorator(decorator: "ast.expr") -> bool:  # type: ignore[name-defined]
@@ -326,8 +329,8 @@ def check_skipped_tests(changed_files: List[str], threshold: int = 3) -> CheckRe
         return [], [
             f"スキップされているテストが {total_skips} 件あります（閾値: {threshold}）。"
             "意図的なものか確認してください。"
-        ]
-    return [], []
+        ], []
+    return [], [], []
 
 
 # ---------------------------------------------------------------------------
@@ -349,9 +352,9 @@ def check_lint(changed_files: List[str]) -> CheckResult:
     """
     cmd = _get_pre_check_cmd("lint")
     if cmd is None:
-        return [], []
+        return [], [], []
     if not changed_files:
-        return [], []
+        return [], [], []
 
     try:
         result = subprocess.run(
@@ -362,13 +365,13 @@ def check_lint(changed_files: List[str]) -> CheckResult:
         )
         if result.returncode != 0:
             output = (result.stdout or result.stderr or "").strip()
-            return [], [f"lint チェックで問題が検出されました。LLMレビュー前に確認してください。\n{output}"]
+            return [], [f"lint チェックで問題が検出されました。LLMレビュー前に確認してください。\n{output}"], []
     except subprocess.TimeoutExpired:
-        return [], ["lint コマンドがタイムアウトしました（120秒）。スキップします。"]
+        return [], ["lint コマンドがタイムアウトしました（120秒）。スキップします。"], []
     except Exception as e:
-        return [], [f"lint コマンドの実行に失敗しました: {e}"]
+        return [], [f"lint コマンドの実行に失敗しました: {e}"], []
 
-    return [], []
+    return [], [], [f"lint: 問題なし（{' '.join(cmd)} 実行済み）"]
 
 
 def check_tests_pass() -> CheckResult:
@@ -377,7 +380,7 @@ def check_tests_pass() -> CheckResult:
     """
     cmd = _get_pre_check_cmd("test")
     if cmd is None:
-        return [], []
+        return [], [], []
 
     try:
         result = subprocess.run(
@@ -388,13 +391,13 @@ def check_tests_pass() -> CheckResult:
         )
         if result.returncode != 0:
             output = (result.stdout or result.stderr or "").strip()
-            return [f"テストが失敗しています。LLMレビュー前に修正してください。\n{output}"], []
+            return [f"テストが失敗しています。LLMレビュー前に修正してください。\n{output}"], [], []
     except subprocess.TimeoutExpired:
-        return [], ["テストコマンドがタイムアウトしました（300秒）。スキップします。"]
+        return [], ["テストコマンドがタイムアウトしました（300秒）。スキップします。"], []
     except Exception as e:
-        return [], [f"テストコマンドの実行に失敗しました: {e}"]
+        return [], [f"テストコマンドの実行に失敗しました: {e}"], []
 
-    return [], []
+    return [], [], [f"test: 全テスト通過（{' '.join(cmd)} 実行済み）"]
 
 
 def check_coverage() -> CheckResult:
@@ -404,7 +407,7 @@ def check_coverage() -> CheckResult:
     """
     cmd = _get_pre_check_cmd("coverage")
     if cmd is None:
-        return [], []
+        return [], [], []
 
     threshold = float(getattr(config, "COVERAGE_THRESHOLD", 80.0))
 
@@ -417,7 +420,7 @@ def check_coverage() -> CheckResult:
         )
         if result.returncode != 0:
             output = (result.stdout or result.stderr or "").strip()
-            return [], [f"coverage コマンドが非ゼロで終了しました。出力を確認してください。\n{output}"]
+            return [], [f"coverage コマンドが非ゼロで終了しました。出力を確認してください。\n{output}"], []
         output = (result.stdout or result.stderr or "").strip()
 
         # "TOTAL ... XX.X%" 形式の行を探す（小数点以下も考慮）
@@ -429,19 +432,19 @@ def check_coverage() -> CheckResult:
                 break
 
         if coverage_pct is None:
-            return [], [f"coverage の計測結果を parse できませんでした。出力を確認してください。\n{output}"]
+            return [], [f"coverage の計測結果を parse できませんでした。出力を確認してください。\n{output}"], []
 
         if coverage_pct < threshold:
             return [], [
                 f"テストカバレッジが {coverage_pct:.1f}% で閾値 {threshold:.1f}% を下回っています。"
                 "カバレッジの向上を検討してください。"
-            ]
+            ], []
     except subprocess.TimeoutExpired:
-        return [], ["coverage コマンドがタイムアウトしました（300秒）。スキップします。"]
+        return [], ["coverage コマンドがタイムアウトしました（300秒）。スキップします。"], []
     except Exception as e:
-        return [], [f"coverage コマンドの実行に失敗しました: {e}"]
+        return [], [f"coverage コマンドの実行に失敗しました: {e}"], []
 
-    return [], []
+    return [], [], [f"coverage: {coverage_pct:.1f}%（閾値 {threshold:.1f}% 以上）"]
 
 
 # ---------------------------------------------------------------------------
@@ -452,6 +455,7 @@ def run_all_checks(diff_text: str, changed_files: List[str]) -> PreCheckResult:
     """全ルールベースチェックを実行して結果を返す。"""
     all_issues: List[str] = []
     all_warnings: List[str] = []
+    all_passed: List[str] = []
 
     checks = [
         lambda: check_empty_diff(diff_text),
@@ -472,13 +476,14 @@ def run_all_checks(diff_text: str, changed_files: List[str]) -> PreCheckResult:
 
     for check_fn in checks:
         try:
-            issues, warnings = check_fn()
+            issues, warnings, passed = check_fn()
             all_issues.extend(issues)
             all_warnings.extend(warnings)
+            all_passed.extend(passed)
             if all_issues:
                 # BLOCK条件が検出されたら残りのチェックをスキップ
                 break
         except Exception as e:
             print(f"[WARN] pre_check_service: チェック中にエラーが発生しました: {e}", file=sys.stderr)
 
-    return PreCheckResult(blocking_issues=all_issues, warnings=all_warnings)
+    return PreCheckResult(blocking_issues=all_issues, warnings=all_warnings, passed_checks=all_passed)

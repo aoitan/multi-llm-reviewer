@@ -11,3 +11,7 @@
 - 19:08 [coding] act: 設定ベースの lint/test/coverage チェックを Gate 1 に追加
   evd: uv run pytest tests/ → 112 passed; 新規: check_lint, check_tests_pass, check_coverage in pre_check_service.py; 設定: PRE_CHECK_COMMANDS + COVERAGE_THRESHOLD in config.py
   block: なし
+
+- 19:38 [review] act: コードレビュー3ラウンド実施、重大指摘を全件修正してPASS
+  evd: R1→config.py二重定義削除/coverage正規表現小数対応/--セパレータ追加/例外テスト追加; R2→coverage:.1f表示修正/check_lint空ファイルガード追加; R3→全レビュアーcritical=false; 119 tests passed; commit f4a761d
+  block: なし

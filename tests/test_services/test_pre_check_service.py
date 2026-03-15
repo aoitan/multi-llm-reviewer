@@ -28,6 +28,27 @@ class TestPreCheckResult:
         result = PreCheckResult(blocking_issues=[], warnings=[])
         assert result.summary == ""
 
+    def test_summary_includes_passed_checks(self):
+        """passed_checks が summary に ✅ で含まれること。"""
+        result = PreCheckResult(blocking_issues=[], warnings=[], passed_checks=["lint: 問題なし"])
+        assert "lint: 問題なし" in result.summary
+        assert "✅" in result.summary
+
+    def test_summary_nonempty_when_only_passed_checks(self):
+        """blocking/warnings がなく passed_checks だけでも summary が返ること。"""
+        result = PreCheckResult(blocking_issues=[], warnings=[], passed_checks=["test: 全テスト通過"])
+        assert result.summary != ""
+
+    def test_summary_ordering_block_warn_pass(self):
+        """summary の順序: BLOCK → WARN → PASS。"""
+        result = PreCheckResult(
+            blocking_issues=["B"],
+            warnings=["W"],
+            passed_checks=["P"],
+        )
+        s = result.summary
+        assert s.index("B") < s.index("W") < s.index("P")
+
 
 # ---------------------------------------------------------------------------
 # check_empty_diff
@@ -35,21 +56,21 @@ class TestPreCheckResult:
 
 class TestCheckEmptyDiff:
     def test_blocks_on_empty_string(self):
-        issues, warnings = pre_check_service.check_empty_diff("")
+        issues, warnings, _ = pre_check_service.check_empty_diff("")
         assert len(issues) == 1
         assert len(warnings) == 0
 
     def test_blocks_on_whitespace_only(self):
-        issues, warnings = pre_check_service.check_empty_diff("   \n\n  ")
+        issues, warnings, _ = pre_check_service.check_empty_diff("   \n\n  ")
         assert len(issues) == 1
 
     def test_blocks_on_no_changes_detected_sentinel(self):
-        issues, warnings = pre_check_service.check_empty_diff("(No changes detected)")
+        issues, warnings, _ = pre_check_service.check_empty_diff("(No changes detected)")
         assert len(issues) == 1
 
     def test_passes_on_real_diff(self):
         diff = "+def hello():\n+    pass\n"
-        issues, warnings = pre_check_service.check_empty_diff(diff)
+        issues, warnings, _ = pre_check_service.check_empty_diff(diff)
         assert len(issues) == 0
 
 
@@ -60,35 +81,35 @@ class TestCheckEmptyDiff:
 class TestCheckConflictMarkers:
     def test_blocks_on_head_marker(self):
         diff = "+<<<<<<< HEAD\n+some code\n+=======\n"
-        issues, warnings = pre_check_service.check_conflict_markers(diff)
+        issues, warnings, _ = pre_check_service.check_conflict_markers(diff)
         assert len(issues) == 1
 
     def test_blocks_on_end_marker(self):
         diff = "+>>>>>>> feature-branch\n"
-        issues, warnings = pre_check_service.check_conflict_markers(diff)
+        issues, warnings, _ = pre_check_service.check_conflict_markers(diff)
         assert len(issues) == 1
 
     def test_passes_on_clean_diff(self):
         diff = "+def foo():\n+    return 1\n"
-        issues, warnings = pre_check_service.check_conflict_markers(diff)
+        issues, warnings, _ = pre_check_service.check_conflict_markers(diff)
         assert len(issues) == 0
 
     def test_passes_when_marker_in_minus_line(self):
         # 削除行はコンフリクトマーカーとして扱わない
         diff = "-<<<<<<< HEAD\n"
-        issues, warnings = pre_check_service.check_conflict_markers(diff)
+        issues, warnings, _ = pre_check_service.check_conflict_markers(diff)
         assert len(issues) == 0
 
     def test_passes_on_divider_line_not_conflict(self):
         # ================== のような区切り線はコンフリクトマーカーではない
         diff = "+==================\n"
-        issues, warnings = pre_check_service.check_conflict_markers(diff)
+        issues, warnings, _ = pre_check_service.check_conflict_markers(diff)
         assert len(issues) == 0
 
     def test_blocks_on_exact_equals_separator(self):
         # 正確に7つの = だけの行はコンフリクトマーカー
         diff = "+=======\n"
-        issues, warnings = pre_check_service.check_conflict_markers(diff)
+        issues, warnings, _ = pre_check_service.check_conflict_markers(diff)
         assert len(issues) == 1
 
 
@@ -99,22 +120,22 @@ class TestCheckConflictMarkers:
 class TestCheckOnlyExcludedFiles:
     def test_blocks_when_only_lockfiles(self):
         files = ["package-lock.json", "yarn.lock"]
-        issues, warnings = pre_check_service.check_only_excluded_files(files)
+        issues, warnings, _ = pre_check_service.check_only_excluded_files(files)
         assert len(issues) == 1
 
     def test_blocks_when_only_binaries(self):
         files = ["assets/logo.png", "icons/icon.svg"]
-        issues, warnings = pre_check_service.check_only_excluded_files(files)
+        issues, warnings, _ = pre_check_service.check_only_excluded_files(files)
         assert len(issues) == 1
 
     def test_passes_when_source_file_present(self):
         files = ["package-lock.json", "src/main.py"]
-        issues, warnings = pre_check_service.check_only_excluded_files(files)
+        issues, warnings, _ = pre_check_service.check_only_excluded_files(files)
         assert len(issues) == 0
 
     def test_passes_on_empty_list(self):
         # ファイルなし = 差分ゼロチェックで捕捉されるべきなのでここはスルー
-        issues, warnings = pre_check_service.check_only_excluded_files([])
+        issues, warnings, _ = pre_check_service.check_only_excluded_files([])
         assert len(issues) == 0
 
 
@@ -125,41 +146,41 @@ class TestCheckOnlyExcludedFiles:
 class TestCheckSecrets:
     def test_blocks_on_api_key(self):
         diff = '+API_KEY = "sk-abcdefghijklmnop"\n'
-        issues, warnings = pre_check_service.check_secrets(diff)
+        issues, warnings, _ = pre_check_service.check_secrets(diff)
         assert len(issues) == 1
 
     def test_blocks_on_password(self):
         diff = '+password = "supersecret123"\n'
-        issues, warnings = pre_check_service.check_secrets(diff)
+        issues, warnings, _ = pre_check_service.check_secrets(diff)
         assert len(issues) == 1
 
     def test_blocks_on_aws_access_key(self):
         diff = '+aws_access_key_id = "AKIAIOSFODNN7EXAMPLE"\n'
-        issues, warnings = pre_check_service.check_secrets(diff)
+        issues, warnings, _ = pre_check_service.check_secrets(diff)
         assert len(issues) == 1
 
     def test_passes_on_clean_diff(self):
         diff = '+def get_user(user_id: int):\n+    return db.get(user_id)\n'
-        issues, warnings = pre_check_service.check_secrets(diff)
+        issues, warnings, _ = pre_check_service.check_secrets(diff)
         assert len(issues) == 0
 
     def test_passes_on_placeholder_value(self):
         # 短い値（8文字未満）はスキップ
         diff = '+API_KEY = "test"\n'
-        issues, warnings = pre_check_service.check_secrets(diff)
+        issues, warnings, _ = pre_check_service.check_secrets(diff)
         assert len(issues) == 0
 
     def test_passes_on_minus_line(self):
         # 削除行は無視
         diff = '-API_KEY = "sk-abcdefghijklmnop"\n'
-        issues, warnings = pre_check_service.check_secrets(diff)
+        issues, warnings, _ = pre_check_service.check_secrets(diff)
         assert len(issues) == 0
 
     def test_passes_on_test_file(self):
         # テストファイルのテストデータは無視
         diff = 'diff --git a/tests/test_foo.py b/tests/test_foo.py\n'
         diff += '+        diff = \'+API_KEY = "sk-abcdefghijklmnop"\\n\'\n'
-        issues, warnings = pre_check_service.check_secrets(diff)
+        issues, warnings, _ = pre_check_service.check_secrets(diff)
         assert len(issues) == 0
 
 
@@ -175,18 +196,18 @@ class TestCheckLargeSingleFileChange:
 
     def test_warns_when_file_exceeds_500_lines(self):
         diff = self._make_diff("src/big.py", 501)
-        issues, warnings = pre_check_service.check_large_single_file_change(diff)
+        issues, warnings, _ = pre_check_service.check_large_single_file_change(diff)
         assert len(warnings) == 1
         assert len(issues) == 0
 
     def test_passes_when_file_under_500_lines(self):
         diff = self._make_diff("src/small.py", 100)
-        issues, warnings = pre_check_service.check_large_single_file_change(diff)
+        issues, warnings, _ = pre_check_service.check_large_single_file_change(diff)
         assert len(warnings) == 0
 
     def test_warns_only_for_large_file_in_multi_file_diff(self):
         diff = self._make_diff("src/big.py", 600) + self._make_diff("src/small.py", 10)
-        issues, warnings = pre_check_service.check_large_single_file_change(diff)
+        issues, warnings, _ = pre_check_service.check_large_single_file_change(diff)
         assert len(warnings) == 1
 
 
@@ -197,33 +218,33 @@ class TestCheckLargeSingleFileChange:
 class TestCheckTodoFixme:
     def test_warns_on_todo_in_added_line(self):
         diff = "+# TODO: implement this later\n"
-        issues, warnings = pre_check_service.check_todo_fixme(diff)
+        issues, warnings, _ = pre_check_service.check_todo_fixme(diff)
         assert len(warnings) == 1
 
     def test_warns_on_fixme_in_added_line(self):
         diff = "+# FIXME: broken logic\n"
-        issues, warnings = pre_check_service.check_todo_fixme(diff)
+        issues, warnings, _ = pre_check_service.check_todo_fixme(diff)
         assert len(warnings) == 1
 
     def test_warns_on_hack_in_added_line(self):
         diff = "+# HACK: dirty workaround\n"
-        issues, warnings = pre_check_service.check_todo_fixme(diff)
+        issues, warnings, _ = pre_check_service.check_todo_fixme(diff)
         assert len(warnings) == 1
 
     def test_passes_on_todo_in_removed_line(self):
         diff = "-# TODO: old todo\n"
-        issues, warnings = pre_check_service.check_todo_fixme(diff)
+        issues, warnings, _ = pre_check_service.check_todo_fixme(diff)
         assert len(warnings) == 0
 
     def test_passes_on_clean_diff(self):
         diff = "+def process():\n+    return True\n"
-        issues, warnings = pre_check_service.check_todo_fixme(diff)
+        issues, warnings, _ = pre_check_service.check_todo_fixme(diff)
         assert len(warnings) == 0
 
     def test_passes_on_todo_in_variable_name(self):
         """TODO_LIST などの変数名での誤検知がないこと（単語境界チェック）。"""
         diff = "+TODO_LIST = []\n+todoable_method = True\n"
-        issues, warnings = pre_check_service.check_todo_fixme(diff)
+        issues, warnings, _ = pre_check_service.check_todo_fixme(diff)
         assert len(warnings) == 0
 
 
@@ -235,24 +256,24 @@ class TestCheckPythonSyntax:
     def test_blocks_on_syntax_error(self, tmp_path):
         bad_file = tmp_path / "bad.py"
         bad_file.write_text("def foo(\n    pass\n")
-        issues, warnings = pre_check_service.check_python_syntax([str(bad_file)])
+        issues, warnings, _ = pre_check_service.check_python_syntax([str(bad_file)])
         assert len(issues) == 1
 
     def test_passes_on_valid_python(self, tmp_path):
         good_file = tmp_path / "good.py"
         good_file.write_text("def foo():\n    pass\n")
-        issues, warnings = pre_check_service.check_python_syntax([str(good_file)])
+        issues, warnings, _ = pre_check_service.check_python_syntax([str(good_file)])
         assert len(issues) == 0
 
     def test_ignores_non_python_files(self, tmp_path):
         ts_file = tmp_path / "app.ts"
         ts_file.write_text("const x: number = 1;\n")
-        issues, warnings = pre_check_service.check_python_syntax([str(ts_file)])
+        issues, warnings, _ = pre_check_service.check_python_syntax([str(ts_file)])
         assert len(issues) == 0
 
     def test_passes_when_file_not_found(self):
         # 存在しないファイルは無視（削除されたファイルの可能性）
-        issues, warnings = pre_check_service.check_python_syntax(["/nonexistent/path/file.py"])
+        issues, warnings, _ = pre_check_service.check_python_syntax(["/nonexistent/path/file.py"])
         assert len(issues) == 0
 
 
@@ -262,14 +283,14 @@ class TestCheckPythonSyntax:
 
 class TestCheckTypescriptSyntax:
     def test_skips_when_no_ts_files(self):
-        issues, warnings = pre_check_service.check_typescript_syntax(["src/main.py"])
+        issues, warnings, _ = pre_check_service.check_typescript_syntax(["src/main.py"])
         assert len(issues) == 0
         assert len(warnings) == 0
 
     def test_warns_when_ts_files_present_but_tsc_not_found(self):
         with patch("shutil.which", return_value=None), \
              patch("multi_llm_reviewer.services.pre_check_service._find_tsc", return_value=None):
-            issues, warnings = pre_check_service.check_typescript_syntax(["src/app.ts"])
+            issues, warnings, _ = pre_check_service.check_typescript_syntax(["src/app.ts"])
         assert len(issues) == 0
         assert len(warnings) == 1  # tsc が見つからない警告
 
@@ -282,7 +303,7 @@ class TestCheckTypescriptSyntax:
         mock_result.stderr = ""
         with patch("multi_llm_reviewer.services.pre_check_service._find_tsc", return_value="tsc"), \
              patch("subprocess.run", return_value=mock_result):
-            issues, warnings = pre_check_service.check_typescript_syntax([str(ts_file)])
+            issues, warnings, _ = pre_check_service.check_typescript_syntax([str(ts_file)])
         assert len(issues) == 1  # TS1xxx → BLOCK
         assert len(warnings) == 0
 
@@ -296,7 +317,7 @@ class TestCheckTypescriptSyntax:
         mock_result.stderr = ""
         with patch("multi_llm_reviewer.services.pre_check_service._find_tsc", return_value="tsc"), \
              patch("subprocess.run", return_value=mock_result):
-            issues, warnings = pre_check_service.check_typescript_syntax([str(ts_file)])
+            issues, warnings, _ = pre_check_service.check_typescript_syntax([str(ts_file)])
         assert len(issues) == 0  # TS2xxx → not BLOCK
         assert len(warnings) == 1  # → WARN
 
@@ -307,7 +328,7 @@ class TestCheckTypescriptSyntax:
         ts_file.write_text("const x = 1;\n")
         with patch("multi_llm_reviewer.services.pre_check_service._find_tsc", return_value="tsc"), \
              patch("subprocess.run", side_effect=sp.TimeoutExpired("tsc", 120)):
-            issues, warnings = pre_check_service.check_typescript_syntax([str(ts_file)])
+            issues, warnings, _ = pre_check_service.check_typescript_syntax([str(ts_file)])
         assert len(issues) == 0
         assert len(warnings) == 1
 
@@ -320,7 +341,7 @@ class TestCheckTypescriptSyntax:
         mock_result.stderr = ""
         with patch("multi_llm_reviewer.services.pre_check_service._find_tsc", return_value="tsc"), \
              patch("subprocess.run", return_value=mock_result):
-            issues, warnings = pre_check_service.check_typescript_syntax([str(ts_file)])
+            issues, warnings, _ = pre_check_service.check_typescript_syntax([str(ts_file)])
         assert len(issues) == 0
         assert len(warnings) == 0
 
@@ -332,7 +353,7 @@ class TestCheckTypescriptSyntax:
 class TestCheckMissingTests:
     def test_warns_when_src_changed_without_test(self):
         changed = ["src/multi_llm_reviewer/services/foo_service.py"]
-        issues, warnings = pre_check_service.check_missing_tests(changed)
+        issues, warnings, _ = pre_check_service.check_missing_tests(changed)
         assert len(warnings) == 1
 
     def test_passes_when_both_src_and_test_changed(self):
@@ -340,17 +361,17 @@ class TestCheckMissingTests:
             "src/multi_llm_reviewer/services/foo_service.py",
             "tests/test_services/test_foo_service.py",
         ]
-        issues, warnings = pre_check_service.check_missing_tests(changed)
+        issues, warnings, _ = pre_check_service.check_missing_tests(changed)
         assert len(warnings) == 0
 
     def test_passes_when_only_test_changed(self):
         changed = ["tests/test_services/test_foo.py"]
-        issues, warnings = pre_check_service.check_missing_tests(changed)
+        issues, warnings, _ = pre_check_service.check_missing_tests(changed)
         assert len(warnings) == 0
 
     def test_passes_when_only_non_python_changed(self):
         changed = ["src/app.ts", "src/components/Button.tsx"]
-        issues, warnings = pre_check_service.check_missing_tests(changed)
+        issues, warnings, _ = pre_check_service.check_missing_tests(changed)
         assert len(warnings) == 0
 
 
@@ -365,7 +386,7 @@ class TestCheckAssertLessTests:
             def test_something():
                 x = 1 + 1
         """))
-        issues, warnings = pre_check_service.check_assert_less_tests([str(test_file)])
+        issues, warnings, _ = pre_check_service.check_assert_less_tests([str(test_file)])
         assert len(warnings) == 1
 
     def test_passes_on_test_func_with_assert(self, tmp_path):
@@ -374,7 +395,7 @@ class TestCheckAssertLessTests:
             def test_something():
                 assert 1 + 1 == 2
         """))
-        issues, warnings = pre_check_service.check_assert_less_tests([str(test_file)])
+        issues, warnings, _ = pre_check_service.check_assert_less_tests([str(test_file)])
         assert len(warnings) == 0
 
     def test_passes_on_test_func_with_pytest_raises(self, tmp_path):
@@ -385,13 +406,13 @@ class TestCheckAssertLessTests:
                 with pytest.raises(ValueError):
                     raise ValueError()
         """))
-        issues, warnings = pre_check_service.check_assert_less_tests([str(test_file)])
+        issues, warnings, _ = pre_check_service.check_assert_less_tests([str(test_file)])
         assert len(warnings) == 0
 
     def test_ignores_non_test_files(self, tmp_path):
         src_file = tmp_path / "service.py"
         src_file.write_text("def do_something():\n    x = 1\n")
-        issues, warnings = pre_check_service.check_assert_less_tests([str(src_file)])
+        issues, warnings, _ = pre_check_service.check_assert_less_tests([str(src_file)])
         assert len(warnings) == 0
 
     def test_warns_on_class_method_without_assert(self, tmp_path):
@@ -402,7 +423,7 @@ class TestCheckAssertLessTests:
                 def test_bar(self):
                     x = 1
         """))
-        issues, warnings = pre_check_service.check_assert_less_tests([str(test_file)])
+        issues, warnings, _ = pre_check_service.check_assert_less_tests([str(test_file)])
         assert len(warnings) == 1
 
     def test_passes_on_class_method_with_assert(self, tmp_path):
@@ -413,7 +434,7 @@ class TestCheckAssertLessTests:
                 def test_bar(self):
                     assert 1 + 1 == 2
         """))
-        issues, warnings = pre_check_service.check_assert_less_tests([str(test_file)])
+        issues, warnings, _ = pre_check_service.check_assert_less_tests([str(test_file)])
         assert len(warnings) == 0
 
     def test_no_false_positive_on_def_test_in_string_literal(self, tmp_path):
@@ -429,7 +450,7 @@ class TestCheckAssertLessTests:
                 (tmp_path / "t.py").write_text(content)
                 assert (tmp_path / "t.py").exists()
         """))
-        issues, warnings = pre_check_service.check_assert_less_tests([str(test_file)])
+        issues, warnings, _ = pre_check_service.check_assert_less_tests([str(test_file)])
         assert len(warnings) == 0  # 文字列内の def test_ は無視される
 
 
@@ -451,7 +472,7 @@ class TestCheckSkippedTests:
             @pytest.mark.skip
             def test_d(): assert True
         """))
-        issues, warnings = pre_check_service.check_skipped_tests([str(test_file)], threshold=3)
+        issues, warnings, _ = pre_check_service.check_skipped_tests([str(test_file)], threshold=3)
         assert len(warnings) == 1
 
     def test_passes_when_skips_under_threshold(self, tmp_path):
@@ -461,13 +482,13 @@ class TestCheckSkippedTests:
             @pytest.mark.skip
             def test_a(): assert True
         """))
-        issues, warnings = pre_check_service.check_skipped_tests([str(test_file)], threshold=3)
+        issues, warnings, _ = pre_check_service.check_skipped_tests([str(test_file)], threshold=3)
         assert len(warnings) == 0
 
     def test_ignores_non_test_files(self, tmp_path):
         src_file = tmp_path / "service.py"
         src_file.write_text("@some_decorator\ndef foo(): pass\n")
-        issues, warnings = pre_check_service.check_skipped_tests([str(src_file)], threshold=3)
+        issues, warnings, _ = pre_check_service.check_skipped_tests([str(src_file)], threshold=3)
         assert len(warnings) == 0
 
     def test_no_false_positive_on_skip_in_string_literal(self, tmp_path):
@@ -479,7 +500,7 @@ class TestCheckSkippedTests:
                 (tmp_path / "t.py").write_text(code)
                 assert (tmp_path / "t.py").exists()
         """))
-        issues, warnings = pre_check_service.check_skipped_tests([str(test_file)], threshold=1)
+        issues, warnings, _ = pre_check_service.check_skipped_tests([str(test_file)], threshold=1)
         assert len(warnings) == 0  # 文字列内の @skip は無視される
 
 
@@ -520,7 +541,7 @@ class TestCheckLint:
         original = getattr(cfg, "PRE_CHECK_COMMANDS", None)
         cfg.PRE_CHECK_COMMANDS = {"lint": None, "test": None, "coverage": None}
         try:
-            issues, warnings = pre_check_service.check_lint(["src/foo.py"])
+            issues, warnings, passed = pre_check_service.check_lint(["src/foo.py"])
             assert issues == []
             assert warnings == []
         finally:
@@ -537,14 +558,14 @@ class TestCheckLint:
         mock_result.stderr = ""
         try:
             with patch("subprocess.run", return_value=mock_result):
-                issues, warnings = pre_check_service.check_lint(["src/foo.py"])
+                issues, warnings, passed = pre_check_service.check_lint(["src/foo.py"])
             assert issues == []
             assert len(warnings) == 1
         finally:
             cfg.PRE_CHECK_COMMANDS = original
 
     def test_passes_on_lint_success(self):
-        """lint コマンドが exit code 0 を返した場合は何も返さないこと。"""
+        """lint コマンドが exit code 0 を返した場合は passed_checks が返ること。"""
         from multi_llm_reviewer.core import config as cfg
         original = getattr(cfg, "PRE_CHECK_COMMANDS", None)
         cfg.PRE_CHECK_COMMANDS = {"lint": ["ruff", "check"], "test": None, "coverage": None}
@@ -554,9 +575,11 @@ class TestCheckLint:
         mock_result.stderr = ""
         try:
             with patch("subprocess.run", return_value=mock_result):
-                issues, warnings = pre_check_service.check_lint(["src/foo.py"])
+                issues, warnings, passed = pre_check_service.check_lint(["src/foo.py"])
             assert issues == []
             assert warnings == []
+            assert len(passed) == 1
+            assert "lint" in passed[0]
         finally:
             cfg.PRE_CHECK_COMMANDS = original
 
@@ -588,7 +611,7 @@ class TestCheckLint:
         cfg.PRE_CHECK_COMMANDS = {"lint": ["nonexistent-linter"], "test": None, "coverage": None}
         try:
             with patch("subprocess.run", side_effect=FileNotFoundError("not found")):
-                issues, warnings = pre_check_service.check_lint(["src/foo.py"])
+                issues, warnings, passed = pre_check_service.check_lint(["src/foo.py"])
             assert issues == []
             assert len(warnings) == 1
         finally:
@@ -606,7 +629,7 @@ class TestCheckTestsPass:
         original = getattr(cfg, "PRE_CHECK_COMMANDS", None)
         cfg.PRE_CHECK_COMMANDS = {"lint": None, "test": None, "coverage": None}
         try:
-            issues, warnings = pre_check_service.check_tests_pass()
+            issues, warnings, passed = pre_check_service.check_tests_pass()
             assert issues == []
             assert warnings == []
         finally:
@@ -623,7 +646,7 @@ class TestCheckTestsPass:
         mock_result.stderr = ""
         try:
             with patch("subprocess.run", return_value=mock_result):
-                issues, warnings = pre_check_service.check_tests_pass()
+                issues, warnings, passed = pre_check_service.check_tests_pass()
             assert len(issues) == 1  # BLOCK
             assert warnings == []
         finally:
@@ -640,9 +663,11 @@ class TestCheckTestsPass:
         mock_result.stderr = ""
         try:
             with patch("subprocess.run", return_value=mock_result):
-                issues, warnings = pre_check_service.check_tests_pass()
+                issues, warnings, passed = pre_check_service.check_tests_pass()
             assert issues == []
             assert warnings == []
+            assert len(passed) == 1
+            assert "test" in passed[0]
         finally:
             cfg.PRE_CHECK_COMMANDS = original
 
@@ -653,7 +678,7 @@ class TestCheckTestsPass:
         cfg.PRE_CHECK_COMMANDS = {"lint": None, "test": ["nonexistent-runner"], "coverage": None}
         try:
             with patch("subprocess.run", side_effect=FileNotFoundError("not found")):
-                issues, warnings = pre_check_service.check_tests_pass()
+                issues, warnings, passed = pre_check_service.check_tests_pass()
             assert issues == []
             assert len(warnings) == 1
         finally:
@@ -671,7 +696,7 @@ class TestCheckCoverage:
         original = getattr(cfg, "PRE_CHECK_COMMANDS", None)
         cfg.PRE_CHECK_COMMANDS = {"lint": None, "test": None, "coverage": None}
         try:
-            issues, warnings = pre_check_service.check_coverage()
+            issues, warnings, passed = pre_check_service.check_coverage()
             assert issues == []
             assert warnings == []
         finally:
@@ -690,7 +715,7 @@ class TestCheckCoverage:
         mock_result.stderr = ""
         try:
             with patch("subprocess.run", return_value=mock_result):
-                issues, warnings = pre_check_service.check_coverage()
+                issues, warnings, passed = pre_check_service.check_coverage()
             assert issues == []
             assert len(warnings) == 1
             assert "60" in warnings[0]
@@ -711,9 +736,11 @@ class TestCheckCoverage:
         mock_result.stderr = ""
         try:
             with patch("subprocess.run", return_value=mock_result):
-                issues, warnings = pre_check_service.check_coverage()
+                issues, warnings, passed = pre_check_service.check_coverage()
             assert issues == []
             assert warnings == []
+            assert len(passed) == 1
+            assert "90" in passed[0]
         finally:
             cfg.PRE_CHECK_COMMANDS = orig_cmd
             cfg.COVERAGE_THRESHOLD = orig_thr
@@ -731,7 +758,7 @@ class TestCheckCoverage:
         mock_result.stderr = ""
         try:
             with patch("subprocess.run", return_value=mock_result):
-                issues, warnings = pre_check_service.check_coverage()
+                issues, warnings, passed = pre_check_service.check_coverage()
             assert issues == []
             assert len(warnings) == 1
         finally:
@@ -751,9 +778,11 @@ class TestCheckCoverage:
         mock_result.stderr = ""
         try:
             with patch("subprocess.run", return_value=mock_result):
-                issues, warnings = pre_check_service.check_coverage()
+                issues, warnings, passed = pre_check_service.check_coverage()
             assert issues == []
             assert warnings == []
+            assert len(passed) == 1
+            assert "90.5" in passed[0]
         finally:
             cfg.PRE_CHECK_COMMANDS = orig_cmd
             cfg.COVERAGE_THRESHOLD = orig_thr
@@ -771,7 +800,7 @@ class TestCheckCoverage:
         mock_result.stderr = ""
         try:
             with patch("subprocess.run", return_value=mock_result):
-                issues, warnings = pre_check_service.check_coverage()
+                issues, warnings, passed = pre_check_service.check_coverage()
             assert issues == []
             assert len(warnings) == 1
         finally:
@@ -791,7 +820,7 @@ class TestCheckCoverage:
         mock_result.stderr = ""
         try:
             with patch("subprocess.run", return_value=mock_result):
-                issues, warnings = pre_check_service.check_coverage()
+                issues, warnings, passed = pre_check_service.check_coverage()
             assert issues == []
             assert len(warnings) == 1
         finally:
@@ -807,7 +836,7 @@ class TestCheckCoverage:
         cfg.COVERAGE_THRESHOLD = 80.0
         try:
             with patch("subprocess.run", side_effect=FileNotFoundError("not found")):
-                issues, warnings = pre_check_service.check_coverage()
+                issues, warnings, passed = pre_check_service.check_coverage()
             assert issues == []
             assert len(warnings) == 1
         finally:

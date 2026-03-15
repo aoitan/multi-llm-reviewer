@@ -84,7 +84,7 @@ def run_fix_attempt(review_text, fixer_name, loop_count):
     # 現在の変更規模を推測するために git_utils を使用
     # 本来は review_args を受け取るべきだが、簡易的に再取得
     base_branch = config.DEFAULT_BASE_BRANCH
-    changed_files = git_utils.get_changed_files(base_branch)
+    from multi_llm_reviewer.utils import git_utils; changed_files = git_utils.get_changed_files(base_branch)
     threshold = getattr(config, "LARGE_CHANGESET_THRESHOLD", 10)
     
     is_large_changeset = len(changed_files) >= threshold
