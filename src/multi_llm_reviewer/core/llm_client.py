@@ -1,8 +1,10 @@
 import subprocess
 import sys
-from multi_llm_reviewer.core import config
-
 import os
+import select
+import time
+
+from multi_llm_reviewer.core import config
 
 def is_rate_limit(text):
     """出力テキストからレートリミットエラーを検知する"""
@@ -14,6 +16,61 @@ def is_rate_limit(text):
         "exhausted your capacity", "exhausted", "quota will reset"
     ]
     return any(kw in text.lower() for kw in keywords)
+
+
+def _get_review_command_timeout_seconds():
+    return int(getattr(config, "REVIEW_COMMAND_TIMEOUT_SECONDS", 180))
+
+
+def _read_process_output(process, stream_callback=None, echo_stdout=False):
+    timeout_seconds = _get_review_command_timeout_seconds()
+    start_time = time.monotonic()
+    full_output_parts = []
+    stdout_fd = process.stdout.fileno()
+    encoding = process.stdout.encoding or "utf-8"
+
+    while True:
+        if time.monotonic() - start_time >= timeout_seconds:
+            process.kill()
+            process.wait()
+            timeout_msg = (
+                f"[ERROR] Command timed out after {timeout_seconds} seconds: {' '.join(process.args)}\n"
+            )
+            if stream_callback:
+                stream_callback(timeout_msg)
+            if echo_stdout:
+                sys.stdout.write(timeout_msg)
+                sys.stdout.flush()
+            full_output_parts.append(timeout_msg)
+            return "ERROR", "".join(full_output_parts)
+
+        ready, _, _ = select.select([process.stdout], [], [], 0.2)
+        if not ready:
+            if process.poll() is not None:
+                break
+            continue
+
+        chunk = os.read(stdout_fd, 4096)
+        if not chunk:
+            if process.poll() is not None:
+                break
+            continue
+
+        line = chunk.decode(encoding, errors="replace")
+        if stream_callback:
+            stream_callback(line)
+        if echo_stdout:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+        full_output_parts.append(line)
+
+    process.wait()
+    full_output = "".join(full_output_parts)
+    if process.returncode != 0:
+        if is_rate_limit(full_output):
+            return "RATE_LIMIT", full_output
+        return "ERROR", full_output
+    return "SUCCESS", full_output
 
 def execute_command(cmd, input_text=None):
     """
@@ -44,22 +101,7 @@ def execute_command(cmd, input_text=None):
                 process.stdin.close()
             except BrokenPipeError:
                 pass
-
-        output_lines = []
-        for line in process.stdout:
-            sys.stdout.write(line)
-            sys.stdout.flush()
-            output_lines.append(line)
-        
-        process.wait()
-        full_output = "".join(output_lines)
-        
-        if process.returncode != 0:
-            if is_rate_limit(full_output):
-                return "RATE_LIMIT", full_output
-            return "ERROR", full_output
-        
-        return "SUCCESS", full_output
+        return _read_process_output(process, echo_stdout=True)
     except Exception as e:
         return "ERROR", str(e)
 
@@ -93,28 +135,7 @@ def execute_command_async(cmd, input_text=None, stream_callback=None):
             except BrokenPipeError:
                 pass
 
-        full_output_parts = []
-        
-        # 1文字ずつではなく、行またはバッファ単位で読む
-        while True:
-            line = process.stdout.readline()
-            if not line and process.poll() is not None:
-                break
-            
-            if line:
-                if stream_callback:
-                    stream_callback(line)
-                full_output_parts.append(line)
-        
-        process.wait()
-        full_output = "".join(full_output_parts)
-        
-        if process.returncode != 0:
-            if is_rate_limit(full_output):
-                return "RATE_LIMIT", full_output
-            return "ERROR", full_output
-            
-        return "SUCCESS", full_output
+        return _read_process_output(process, stream_callback=stream_callback)
         
     except Exception as e:
         err_msg = str(e)

@@ -1,7 +1,6 @@
 """pre_check_service のユニットテスト"""
 import textwrap
 from unittest.mock import patch, MagicMock
-import pytest
 from multi_llm_reviewer.services import pre_check_service
 from multi_llm_reviewer.services.pre_check_service import PreCheckResult
 

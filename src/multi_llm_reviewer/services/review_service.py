@@ -1,10 +1,37 @@
 import sys
+import re
 from concurrent.futures import ThreadPoolExecutor
 from multi_llm_reviewer.core import config, git_utils, github_utils, llm_client, local_llm_client
 from multi_llm_reviewer.core.stream_manager import StreamManager
 from multi_llm_reviewer.services import pre_check_service
 
 import os
+
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def _load_review_base_prompt(red_team: bool = False):
+    if red_team:
+        red_team_prompt = config.load_prompt("review_prompt_red_team.txt")
+        if red_team_prompt:
+            return red_team_prompt
+        raise RuntimeError(
+            "Red-team review prompt is missing. Aborting red-team review instead of falling back to the standard prompt."
+        )
+    return config.load_prompt("review_prompt.txt")
+
+
+def _sanitize_prompt_text(text: str) -> str:
+    if not text:
+        return ""
+
+    sanitized = _ANSI_ESCAPE_RE.sub("", text)
+    sanitized = "".join(
+        ch for ch in sanitized
+        if ch in ("\n", "\t") or ord(ch) >= 32
+    )
+    return sanitized.strip()
+
 
 def _build_review_prompt(base_prompt, issue_context, spec_text, diff_context,
                          pre_check_summary: str = "", local_llm_analysis: str = ""):
@@ -19,7 +46,8 @@ def _build_review_prompt(base_prompt, issue_context, spec_text, diff_context,
     pre_check_section = ""
     if pre_check_summary:
         pre_check_section = f"""
-【事前自動チェック済み項目（重複指摘は不要）】
+【事前自動チェック済み項目（参考情報）】
+- これらが通過済みでも、追加のセキュリティ・信頼性観点のレビューは省略しないこと。
 {pre_check_summary}
 """
 
@@ -42,25 +70,33 @@ def _build_review_prompt(base_prompt, issue_context, spec_text, diff_context,
 ======================
 """
 
-def decide_reviewers(target_branch, mode_arg):
+def decide_reviewers(target_branch, mode_arg, red_team: bool = False):
     """レビューモードに基づいて実行するレビュアーリストを決定する"""
-    
+    normalized_mode = mode_arg.lower()
+
     # ローカルLLM専用モードのチェック
     if os.getenv("LOCAL_LLM_ONLY") == "1":
         # configに LOCAL_LLM_REVIEWER_SLOT があればそれを使う
         local_slot = getattr(config, "LOCAL_LLM_REVIEWER_SLOT", None)
         if local_slot:
+            if red_team:
+                return [local_slot], "Red Team: LOCAL_LLM_ONLY mode reduces reviewer diversity to the local reviewer"
             return [local_slot], "LOCAL_LLM_ONLY mode (Llama3 preferred)"
 
+    if red_team and normalized_mode == "auto":
+        return config.REVIEWER_SLOTS, "Red Team: forced ALL reviewers"
+
     # "all" 指定
-    if mode_arg.lower() == "all":
+    if normalized_mode == "all":
         return config.REVIEWER_SLOTS, "User forced ALL"
 
     # カンマ区切り指定 (例: "gemini,codex")
-    if mode_arg.lower() not in ["auto", "single"]:
+    if normalized_mode not in ["auto", "single"]:
         targets = [t.strip().lower() for t in mode_arg.split(",")]
         selected = [s for s in config.REVIEWER_SLOTS if s["name"].lower() in targets]
         if selected:
+            if red_team:
+                return selected, f"Red Team: user selected reviewers ({mode_arg})"
             return selected, f"User selected: {mode_arg}"
     
     # Auto / Single モードの判定
@@ -87,7 +123,7 @@ def decide_reviewers(target_branch, mode_arg):
                 break
     
     # モード決定
-    if mode_arg.lower() == "auto":
+    if normalized_mode == "auto":
         if should_be_all:
             return config.REVIEWER_SLOTS, f"Auto: ALL ({reason})"
         else:
@@ -95,9 +131,11 @@ def decide_reviewers(target_branch, mode_arg):
             codex = next((s for s in config.REVIEWER_SLOTS if s["name"] == "Codex"), config.REVIEWER_SLOTS[0])
             return [codex], f"Auto: Single ({reason})"
             
-    elif mode_arg.lower() == "single":
+    elif normalized_mode == "single":
         # 条件に関わらずCodex (または先頭)
         codex = next((s for s in config.REVIEWER_SLOTS if s["name"] == "Codex"), config.REVIEWER_SLOTS[0])
+        if red_team:
+            return [codex], "Red Team: user forced Single reviewer"
         return [codex], "User forced Single"
         
     return config.REVIEWER_SLOTS, "Unknown mode, defaulting to ALL"
@@ -161,7 +199,7 @@ def _run_single_reviewer_stream(slot, prompt, stream_manager):
     return last_res
 
 
-def run_multi_llm_review(target_branch="main", issue_num=None, mode="auto", spec_text=""):
+def run_multi_llm_review(target_branch="main", issue_num=None, mode="auto", spec_text="", red_team: bool = False):
     """
     複数のLLMによるレビューを実行する（ストリーミング対応）。
     """
@@ -192,24 +230,27 @@ def run_multi_llm_review(target_branch="main", issue_num=None, mode="auto", spec
         local_analysis = local_llm_client.run_local_llm_pre_check(diff_text)
 
     # レビュアー決定
-    selected_slots, decision_log = decide_reviewers(target_branch, mode)
+    selected_slots, decision_log = decide_reviewers(target_branch, mode, red_team=red_team)
     print(f"[INFO] Review Mode: {decision_log}", file=sys.stderr)
+    if red_team:
+        print("[INFO] Review Perspective: Red Team", file=sys.stderr)
+    if red_team and os.getenv("LOCAL_LLM_ONLY") == "1":
+        print("[WARN] Red-team diversity is reduced under LOCAL_LLM_ONLY.", file=sys.stderr)
 
     diff_context = f"\n--------------------------------------------------\n【変更差分 (Diff)】\n{diff_text}\n--------------------------------------------------\n" if diff_text.strip() else "(No changes detected)"
 
     # プロンプトの読み込み（圧縮版）
-    base_prompt = config.load_prompt("review_prompt.txt")
+    base_prompt = _load_review_base_prompt(red_team=red_team)
     if not base_prompt:
-        # フォールバック（以前のプロンプトの一部を簡略化して使用）
         base_prompt = "あなたは熟練エンジニアです。以下のコードをレビューし、最後にJSONを出力してください。"
 
     prompt = _build_review_prompt(
         base_prompt=base_prompt,
-        issue_context=issue_context,
-        spec_text=spec_text,
-        diff_context=diff_context,
-        pre_check_summary=pre_result.summary,
-        local_llm_analysis=local_analysis,
+        issue_context=_sanitize_prompt_text(issue_context),
+        spec_text=_sanitize_prompt_text(spec_text),
+        diff_context=_sanitize_prompt_text(diff_context),
+        pre_check_summary=_sanitize_prompt_text(pre_result.summary),
+        local_llm_analysis=_sanitize_prompt_text(local_analysis),
     )
 
     # StreamManagerの初期化

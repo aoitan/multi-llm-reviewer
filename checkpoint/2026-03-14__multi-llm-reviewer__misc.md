@@ -15,3 +15,7 @@
 - 19:38 [review] act: コードレビュー3ラウンド実施、重大指摘を全件修正してPASS
   evd: R1→config.py二重定義削除/coverage正規表現小数対応/--セパレータ追加/例外テスト追加; R2→coverage:.1f表示修正/check_lint空ファイルガード追加; R3→全レビュアーcritical=false; 119 tests passed; commit f4a761d
   block: なし
+
+- 09:23 [coding] act: 機械チェックのPASS結果をLLMプロンプトに伝達する機能を追加
+  evd: PreCheckResult に passed_checks フィールド追加; CheckResult を3要素タプルに変更; summary に ✅ [PASS] 行追加; 122 tests passed; commit 45b4d5d
+  block: なし

@@ -1,7 +1,6 @@
 import json
 import re
-import sys
-from multi_llm_reviewer.core import config, llm_client
+from multi_llm_reviewer.core import config, git_utils, llm_client, local_llm_client
 from multi_llm_reviewer.services import review_service
 
 import os
@@ -35,7 +34,7 @@ def has_critical_issues(review_text):
                 continue
         
         if critical_found:
-            return True, f"Critical issues detected in JSON:\n" + "\n".join(reasons)
+            return True, "Critical issues detected in JSON:\n" + "\n".join(reasons)
         elif json_parsed_successfully:
             return False, "No critical issues found (verified via JSON output)."
 
@@ -77,14 +76,11 @@ def get_role_instructions(loop_count):
             "goal": "これまでの修正が難航している理由を俯瞰し、設計の前提や境界条件を見直してください。必要であれば方針の根本的な変更を提案し、現在の実装を止める判断も行ってください。"
         }
 
-def run_fix_attempt(review_text, fixer_name, loop_count):
+def run_fix_attempt(review_text, fixer_name, loop_count, base_branch="main"):
     """特定のFixerで設計と実装の二段階で修正を試みる"""
     
     # 0. コンテキスト分析 (オフロード判定用)
-    # 現在の変更規模を推測するために git_utils を使用
-    # 本来は review_args を受け取るべきだが、簡易的に再取得
-    base_branch = config.DEFAULT_BASE_BRANCH
-    from multi_llm_reviewer.utils import git_utils; changed_files = git_utils.get_changed_files(base_branch)
+    changed_files = git_utils.get_changed_files(base_branch)
     threshold = getattr(config, "LARGE_CHANGESET_THRESHOLD", 10)
     
     is_large_changeset = len(changed_files) >= threshold
@@ -93,7 +89,7 @@ def run_fix_attempt(review_text, fixer_name, loop_count):
     can_offload_design = (
         not is_large_changeset 
         and not is_critical_path 
-        and llm_client.is_ollama_available()
+        and local_llm_client.is_ollama_available()
     )
 
     # 1. Design Phase の担当エージェント決定
@@ -106,7 +102,7 @@ def run_fix_attempt(review_text, fixer_name, loop_count):
         design_cmd = config.LOCAL_LLM_FIXER_COMMANDS.get("llama3-fix")
     elif can_offload_design:
         # 条件付きオフロード: ローカルLLMに任せる
-        print(f"\n[INFO] Offloading Design Phase to Local LLM (Small changeset, Non-critical)...")
+        print("\n[INFO] Offloading Design Phase to Local LLM (Small changeset, Non-critical)...")
         design_fixer = "llama3-fix (Offloaded)"
         design_cmd = config.LOCAL_LLM_FIXER_COMMANDS.get("llama3-fix")
     
@@ -145,7 +141,6 @@ def run_fix_attempt(review_text, fixer_name, loop_count):
     # local_llm_client のラッパーを経由させる必要があるかどうか
     
     if "ollama" in design_cmd[0]:
-        from multi_llm_reviewer.core import local_llm_client
         status, design_output = local_llm_client.execute_local_llm_cli(design_cmd, input_text=design_prompt)
     else:
         status, design_output = llm_client.execute_command(design_cmd, design_prompt)
@@ -169,17 +164,16 @@ def run_fix_attempt(review_text, fixer_name, loop_count):
 """
     
     if "ollama" in impl_cmd[0]:
-        from multi_llm_reviewer.core import local_llm_client
         return local_llm_client.execute_local_llm_cli(impl_cmd, input_text=implementation_prompt)
     else:
         return llm_client.execute_command(impl_cmd, implementation_prompt)
 
-def run_fix_with_fallback(review_text, primary_fixer, loop_count):
+def run_fix_with_fallback(review_text, primary_fixer, loop_count, base_branch="main"):
     """レートリミット時にフォールバックしつつ修正を実行する"""
     fixers_to_try = [primary_fixer] + [f for f in config.FIXER_ORDER if f != primary_fixer]
     
     for fixer in fixers_to_try:
-        status, output = run_fix_attempt(review_text, fixer, loop_count)
+        status, output = run_fix_attempt(review_text, fixer, loop_count, base_branch=base_branch)
         
         if status == "SUCCESS":
             print(f"\n>>> Fix process completed with {fixer}.")
@@ -204,7 +198,7 @@ def run_auto_fix_loop(fixer_name="gemini3pro", max_loops=None, review_args=None)
     loop_count = 0
     while loop_count < max_loops:
         loop_count += 1
-        print(f"\n" + "="*60)
+        print("\n" + "="*60)
         print(f" Loop {loop_count}/{max_loops}")
         print("="*60)
         
@@ -218,7 +212,8 @@ def run_auto_fix_loop(fixer_name="gemini3pro", max_loops=None, review_args=None)
             target_branch=review_args.get("base", "main"),
             issue_num=review_args.get("issue"),
             mode=current_mode,
-            spec_text=review_args.get("spec", "")
+            spec_text=review_args.get("spec", ""),
+            red_team=review_args.get("red_team", False),
         )
         
         # 結果を結合して判定
@@ -230,7 +225,12 @@ def run_auto_fix_loop(fixer_name="gemini3pro", max_loops=None, review_args=None)
         if is_critical:
             print(f"\n[!] {reason}")
             # 3. 修正実行
-            success = run_fix_with_fallback(combined_review_text, fixer_name, loop_count)
+            success = run_fix_with_fallback(
+                combined_review_text,
+                fixer_name,
+                loop_count,
+                base_branch=review_args.get("base", "main"),
+            )
             if not success:
                 print("[ERROR] Failed to fix issues. Breaking loop.")
                 break

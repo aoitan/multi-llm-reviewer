@@ -5,7 +5,6 @@
 
 import subprocess
 import sys
-import os
 from typing import Optional, List, Tuple, Dict, Any
 from . import config
 

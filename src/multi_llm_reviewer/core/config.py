@@ -1,9 +1,9 @@
 """設定・定数を管理するモジュール。"""
 
+import os
+
 # --- レビュー・修正ループの全般設定 ---
 MAX_LOOPS = 5
-
-import os
 
 def load_prompt(filename):
     """promptsディレクトリからプロンプトファイルを読み込む"""
@@ -98,6 +98,7 @@ EXCLUDE_PATTERNS = [
 # --- その他 ---
 DEFAULT_BASE_BRANCH = "main"
 MAX_DIFF_CHARS = 100000
+REVIEW_COMMAND_TIMEOUT_SECONDS = 180
 
 # --- 自動モード判定の閾値 ---
 # このファイル数を超えると "Large changeset" とみなしてALLモードになる

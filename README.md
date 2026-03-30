@@ -78,6 +78,16 @@ llm-review -i 123
 
 # 全レビュアー強制実行
 llm-review --reviewers all
+
+# レッドチーム観点で監査
+# 既定では全レビュアーで実行
+llm-review --red-team
+
+# レッドチーム観点を維持しつつ reviewer 数を明示制御
+llm-review --red-team --reviewers single
+
+# ベンダー送信を避けてローカルLLMのみでレッドチーム実行
+LOCAL_LLM_ONLY=1 llm-review --red-team
 ```
 
 ### 自動修正ループ実行 (`llm-fix`)
@@ -90,7 +100,7 @@ llm-fix
 llm-fix --fixer copilot
 
 # review 用の引数を渡す場合（-- の後に記述）
-llm-fix --fixer gemini3pro -- -b develop -i 123
+llm-fix --fixer gemini3pro -- -b develop -i 123 --red-team
 ```
 
 ## トラブルシューティング
