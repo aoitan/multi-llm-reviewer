@@ -2,13 +2,13 @@
 
 > **Note**: 本リポジトリは個人利用目的で作成・公開しているツールです。OSSとしてのサポート提供や機能追加の対応は保証していません。自己責任の上でご利用ください。
 
-複数のLLM (Gemini, Copilot, Codex) を活用した、高度なコードレビューおよび自動修正システムです。
+複数のLLM (Agy, Copilot, Codex) を活用した、高度なコードレビューおよび自動修正システムです。
 Gitの差分とGitHub Issueのコンテキストを理解し、多角的な視点でレビューを行い、発見された重大な問題を自動的に修正しようと試みます。
 
 ## 機能
 
 ### 1. マルチLLMレビュー (`src/review_all.py`)
-- **複数のAIレビュアー:** Gemini (Pro/Flash), GitHub Copilot CLI, OpenAI Codex (via CLI) を並行実行。
+- **複数のAIレビュアー:** Google Agy CLI, GitHub Copilot CLI, OpenAI Codex CLI を並行実行。
 - **スマートな差分取得:** 大規模な差分は自動的に要約し、ロックファイルやバイナリを除外。
 - **コンテキスト認識:** 現在のブランチに関連するGitHub Issueの内容を自動取得 (`gh` CLI使用) し、仕様との整合性を確認。
 - **自動モード選択:** 変更ファイル数や重要度（`core`, `security` 等）に応じて、シングルレビュアーか総力戦（全レビュアー）かを自動判断。
@@ -30,7 +30,7 @@ Gitの差分とGitHub Issueのコンテキストを理解し、多角的な視�
 - `git`
 - `gh` (GitHub CLI) - Issue情報の取得に必要
 - 各LLMのCLIツール:
-    - `gemini`
+    - `agy` ([公式インストール手順](https://antigravity.google/docs/cli/install))
     - `gh` / `copilot` (GitHub Copilot CLI)
     - `codex` (または互換CLI)
 
@@ -73,10 +73,10 @@ commands = [
 
 - `reviewers` を指定すると、そのファイルより低い優先順位の reviewer 一覧をまとめて置き換えます。
 - `fixers.commands` と `local_fixers` は名前単位でマージされます。`fixers.order` は指定した一覧で置き換えます。
-- reviewer/fixer へ渡すプロンプトは常に標準入力です。標準入力を明示する必要がある CLI では、Codex の `-` のような引数も `commands` に含めてください。Gemini は headless モードを明示するため `--prompt ""` を指定し、標準入力をその prompt に追加します。
+- reviewer/fixer へ渡すプロンプトは常に標準入力です。Agy は `--print`、Codex は `-` のように、各CLIの非対話モードを `commands` に含めてください。
 - 不明なキー、空コマンド、存在しない fixer 名などは起動時エラーになります。CLI バイナリの存在確認や認証は各 CLI 側で行ってください。
 
-組み込み既定値はモデル名を固定せず、各 CLI の設定／現行既定モデルを使います。reviewer は Gemini の `plan`、Copilot の view/glob/grep 限定（組み込み MCP 無効）、Codex の `read-only` sandbox を使います。fixer はコード変更が目的のため書き込み可能な非対話モードです。特に Gemini の `yolo` と Copilot fixer の `--allow-all-tools` は対象リポジトリ内でも強い権限を持つため、必要に応じてリポジトリ設定で制限してください。
+組み込み既定値はモデル名を固定せず、各 CLI の設定／現行既定モデルを使います。reviewer は Agy の `plan` + `sandbox`、Copilot の view/glob/grep 限定（組み込み MCP 無効）、Codex の `read-only` sandbox を使います。fixer はコード変更が目的のため書き込み可能な非対話モードです。特に Agy fixer の `--dangerously-skip-permissions` と Copilot fixer の `--allow-all-tools` は対象リポジトリ内でも強い権限を持つため、必要に応じてリポジトリ設定で制限してください。
 
 ## インストール
 
@@ -129,7 +129,7 @@ llm-fix
 llm-fix --fixer copilot
 
 # review 用の引数を渡す場合（-- の後に記述）
-llm-fix --fixer gemini -- -b develop -i 123 --red-team
+llm-fix --fixer agy -- -b develop -i 123 --red-team
 ```
 
 ## トラブルシューティング
@@ -150,6 +150,7 @@ llm-fix --fixer gemini -- -b develop -i 123 --red-team
 - ファイル名が `.multi-llm-reviewer` で、TOML として有効か確認してください。
 - リポジトリ設定は Git ルート（`.git` がある場所）に置いてください。
 - `.multi-llm-reviewer.example` と同じく、コマンドは文字列の配列で記述してください。
+- Agy は `agy --version` で導入確認できます。
 
 ## ディレクトリ構造
 

@@ -27,16 +27,17 @@ class ConfigError(ValueError):
 _DEFAULT_COMMAND_CONFIG = {
     "reviewers": [
         {
-            "name": "Gemini",
+            "name": "Agy",
             "commands": [
                 [
-                    "gemini",
-                    "--approval-mode",
+                    "agy",
+                    "--print",
+                    "--mode",
                     "plan",
+                    "--sandbox",
                     "--output-format",
                     "text",
-                    "--prompt",
-                    "",
+                    "--disable-slash-commands",
                 ]
             ],
         },
@@ -64,16 +65,17 @@ _DEFAULT_COMMAND_CONFIG = {
         },
     ],
     "fixers": {
-        "order": ["gemini", "copilot", "codex"],
+        "order": ["agy", "copilot", "codex"],
         "commands": {
-            "gemini": [
-                "gemini",
-                "--approval-mode",
-                "yolo",
+            "agy": [
+                "agy",
+                "--print",
+                "--mode",
+                "accept-edits",
+                "--dangerously-skip-permissions",
                 "--output-format",
                 "text",
-                "--prompt",
-                "",
+                "--disable-slash-commands",
             ],
             "copilot": [
                 "copilot",

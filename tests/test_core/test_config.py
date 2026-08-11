@@ -14,7 +14,7 @@ def test_config_constants():
 def test_fixer_commands_mapping():
     """修正コマンドのマッピングが定義されていることを確認する"""
     loaded = config.load_command_config(cwd=Path("/"), home=Path("/nonexistent"))
-    assert "gemini" in loaded["fixers"]["commands"]
+    assert "agy" in loaded["fixers"]["commands"]
     assert "copilot" in loaded["fixers"]["commands"]
     assert loaded["fixers"]["commands"]["copilot"] == [
         "copilot",
@@ -22,7 +22,16 @@ def test_fixer_commands_mapping():
         "--no-ask-user",
         "--allow-all-tools",
     ]
-    assert loaded["fixers"]["commands"]["gemini"][-2:] == ["--prompt", ""]
+    assert loaded["fixers"]["commands"]["agy"] == [
+        "agy",
+        "--print",
+        "--mode",
+        "accept-edits",
+        "--dangerously-skip-permissions",
+        "--output-format",
+        "text",
+        "--disable-slash-commands",
+    ]
 
 
 def _write_config(path: Path, content: str) -> None:
@@ -34,15 +43,16 @@ def test_load_command_config_uses_current_non_interactive_defaults(tmp_path):
     loaded = config.load_command_config(cwd=tmp_path, home=tmp_path / "home")
 
     commands = {reviewer["name"]: reviewer["commands"] for reviewer in loaded["reviewers"]}
-    assert commands["Gemini"] == [
+    assert commands["Agy"] == [
         [
-            "gemini",
-            "--approval-mode",
+            "agy",
+            "--print",
+            "--mode",
             "plan",
+            "--sandbox",
             "--output-format",
             "text",
-            "--prompt",
-            "",
+            "--disable-slash-commands",
         ]
     ]
     assert commands["Copilot"] == [

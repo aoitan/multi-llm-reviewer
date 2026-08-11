@@ -90,7 +90,7 @@ def decide_reviewers(target_branch, mode_arg, red_team: bool = False):
     if normalized_mode == "all":
         return config.REVIEWER_SLOTS, "User forced ALL"
 
-    # カンマ区切り指定 (例: "gemini,codex")
+    # カンマ区切り指定 (例: "agy,codex")
     if normalized_mode not in ["auto", "single"]:
         targets = [t.strip().lower() for t in mode_arg.split(",")]
         selected = [s for s in config.REVIEWER_SLOTS if s["name"].lower() in targets]

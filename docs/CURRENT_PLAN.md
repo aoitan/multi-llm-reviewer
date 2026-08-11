@@ -9,7 +9,7 @@
 1. TOML 形式の `~/.config/.multi-llm-reviewer` と `<repo-root>/.multi-llm-reviewer` を読み込む。
 2. 組み込み既定値、ユーザー設定、リポジトリ設定の順で上書きする。
 3. reviewer 一覧、fixer 順序／コマンド、ローカル reviewer／fixer を検証して公開する。
-4. Gemini CLI、GitHub Copilot CLI、Codex CLI の既定コマンドを現行の非対話・権限制御オプションへ更新する。
+4. Agy CLI、GitHub Copilot CLI、Codex CLI の既定コマンドを現行の非対話・権限制御オプションへ更新する。
 5. 設定例と README を更新し、優先順位と安全上の違いを説明する。
 6. 優先順位、不正設定、既定コマンド、fixer 選択の回帰テストを追加する。
 

@@ -39,11 +39,11 @@ def has_critical_issues(review_text):
             return False, "No critical issues found (verified via JSON output)."
 
     print("[INFO] JSON output not found or incomplete. Falling back to text analysis.")
-    gemini_match = re.search(r'#### 重大な問題点\s*\n(.+?)(?:\n####|\n===|$)', review_text, re.DOTALL)
-    if gemini_match:
-        content = gemini_match.group(1).strip()
+    agent_match = re.search(r'#### 重大な問題点\s*\n(.+?)(?:\n####|\n===|$)', review_text, re.DOTALL)
+    if agent_match:
+        content = agent_match.group(1).strip()
         if "なし" not in content and content != "":
-            return True, "Gemini detected critical issues (text analysis)."
+            return True, "Agy detected critical issues (text analysis)."
 
     if "重大な問題: あり" in review_text or "判定: ❌" in review_text:
         return True, "Copilot detected critical issues (text analysis)."

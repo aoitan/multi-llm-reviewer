@@ -30,14 +30,14 @@ def test_has_critical_issues_json_false():
     is_critical, reason = fix_service.has_critical_issues(review_text)
     assert is_critical is False
 
-def test_has_critical_issues_text_gemini():
+def test_has_critical_issues_text_agy():
     review_text = """
     #### 重大な問題点
     - セキュリティホールがあります。
     """
     is_critical, reason = fix_service.has_critical_issues(review_text)
     assert is_critical is True
-    assert "Gemini" in reason
+    assert "Agy" in reason
 
 def test_get_role_instructions():
     role_1 = fix_service.get_role_instructions(1)
@@ -66,7 +66,7 @@ def test_run_fix_attempt_uses_review_base_branch(
 
     status, output = fix_service.run_fix_attempt(
         "review text",
-        "gemini",
+        "agy",
         1,
         base_branch="develop",
     )
@@ -80,7 +80,7 @@ def test_run_fix_attempt_uses_review_base_branch(
 def test_run_fix_with_fallback_passes_base_branch(mock_run_fix_attempt):
     success = fix_service.run_fix_with_fallback(
         "review text",
-        "gemini",
+        "agy",
         1,
         base_branch="develop",
     )

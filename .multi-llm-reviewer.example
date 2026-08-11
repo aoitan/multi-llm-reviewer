@@ -3,9 +3,9 @@ version = 1
 # Reviewer definitions replace the complete reviewer list from the lower-priority
 # configuration. The review prompt is sent to every command over stdin.
 [[reviewers]]
-name = "Gemini"
+name = "Agy"
 commands = [
-  ["gemini", "--approval-mode", "plan", "--output-format", "text", "--prompt", ""],
+  ["agy", "--print", "--mode", "plan", "--sandbox", "--output-format", "text", "--disable-slash-commands"],
 ]
 
 [[reviewers]]
@@ -23,10 +23,10 @@ commands = [
 # Fixers are tried in this order after the selected primary fixer. Command keys
 # are merged by name, so a repository can override one user-level command.
 [fixers]
-order = ["gemini", "copilot", "codex"]
+order = ["agy", "copilot", "codex"]
 
 [fixers.commands]
-gemini = ["gemini", "--approval-mode", "yolo", "--output-format", "text", "--prompt", ""]
+agy = ["agy", "--print", "--mode", "accept-edits", "--dangerously-skip-permissions", "--output-format", "text", "--disable-slash-commands"]
 copilot = ["copilot", "--silent", "--no-ask-user", "--allow-all-tools"]
 codex = ["codex", "exec", "--approve-for-me", "--ephemeral", "-"]
 
