@@ -19,3 +19,7 @@
 - 03:11 [review] act: Agy移行差分を手動レビューし、旧Gemini名・旧フラグの残存なしと外部設定経路を確認
   evd: `git diff --check` exit 0; `llm-review -b main`はAgyのログ権限・Copilot未認証・Codex state DB権限で結果取得不可
   block: 外部レビュアーの認証・sandbox制約
+
+- 03:12 [closing] act: Agy移行変更を専用ブランチへコミット
+  evd: commit: 24f4a5f
+  block: なし
