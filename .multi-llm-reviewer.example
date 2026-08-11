@@ -1,0 +1,38 @@
+version = 1
+
+# Reviewer definitions replace the complete reviewer list from the lower-priority
+# configuration. The review prompt is sent to every command over stdin.
+[[reviewers]]
+name = "Gemini"
+commands = [
+  ["gemini", "--approval-mode", "plan", "--output-format", "text", "--prompt", ""],
+]
+
+[[reviewers]]
+name = "Copilot"
+commands = [
+  ["copilot", "--silent", "--no-ask-user", "--allow-all-tools", "--deny-tool=write", "--deny-tool=shell", "--deny-tool=url"],
+]
+
+[[reviewers]]
+name = "Codex"
+commands = [
+  ["codex", "exec", "--sandbox", "read-only", "--ephemeral", "-"],
+]
+
+# Fixers are tried in this order after the selected primary fixer. Command keys
+# are merged by name, so a repository can override one user-level command.
+[fixers]
+order = ["gemini", "copilot", "codex"]
+
+[fixers.commands]
+gemini = ["gemini", "--approval-mode", "yolo", "--output-format", "text", "--prompt", ""]
+copilot = ["copilot", "--silent", "--no-ask-user", "--allow-all-tools"]
+codex = ["codex", "exec", "--approve-for-me", "--ephemeral", "-"]
+
+[local_reviewer]
+name = "LocalLlama3 (優先)"
+commands = [["ollama", "run", "llama3"]]
+
+[local_fixers]
+llama3-fix = ["ollama", "run", "llama3"]

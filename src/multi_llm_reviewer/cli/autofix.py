@@ -19,7 +19,12 @@ Example:
   python3 -m multi_llm_reviewer.cli.autofix --fixer copilot -- -b develop -i 123 --red-team
 """
     )
-    parser.add_argument("--fixer", choices=config.FIXER_ORDER, default="gemini3pro", help="Primary fixer agent")
+    parser.add_argument(
+        "--fixer",
+        choices=config.FIXER_COMMANDS,
+        default=config.FIXER_ORDER[0],
+        help="Primary fixer agent",
+    )
     
     # 残りの引数は review_all.py (review_service) に渡すためのものとして取得
     args, unknown_args = parser.parse_known_args()

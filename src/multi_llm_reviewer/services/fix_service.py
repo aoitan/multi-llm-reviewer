@@ -107,7 +107,10 @@ def run_fix_attempt(review_text, fixer_name, loop_count, base_branch="main"):
         design_cmd = config.LOCAL_LLM_FIXER_COMMANDS.get("llama3-fix")
     
     if design_cmd is None:
-        design_cmd = config.FIXER_COMMANDS.get(fixer_name, config.FIXER_COMMANDS["gemini3pro"])
+        default_fixer = config.FIXER_ORDER[0]
+        design_cmd = config.FIXER_COMMANDS.get(
+            fixer_name, config.FIXER_COMMANDS[default_fixer]
+        )
 
 
     # 2. Implementation Phase の担当エージェント決定
@@ -119,7 +122,10 @@ def run_fix_attempt(review_text, fixer_name, loop_count, base_branch="main"):
         impl_cmd = config.LOCAL_LLM_FIXER_COMMANDS.get("llama3-fix")
     else:
         # 実装は常にフロンティアLLM (指定されたFixer)
-        impl_cmd = config.FIXER_COMMANDS.get(fixer_name, config.FIXER_COMMANDS["gemini3pro"])
+        default_fixer = config.FIXER_ORDER[0]
+        impl_cmd = config.FIXER_COMMANDS.get(
+            fixer_name, config.FIXER_COMMANDS[default_fixer]
+        )
         
     role_info = get_role_instructions(loop_count)
     
@@ -188,10 +194,11 @@ def run_fix_with_fallback(review_text, primary_fixer, loop_count, base_branch="m
     print("\n[ERROR] All available fixers failed or reached rate limits.")
     return False
 
-def run_auto_fix_loop(fixer_name="gemini3pro", max_loops=None, review_args=None):
+def run_auto_fix_loop(fixer_name=None, max_loops=None, review_args=None):
     """
     自動修正ループを実行する。
     """
+    fixer_name = fixer_name or config.FIXER_ORDER[0]
     max_loops = max_loops or config.MAX_LOOPS
     review_args = review_args or {}
     

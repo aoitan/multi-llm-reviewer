@@ -66,7 +66,7 @@ def test_run_fix_attempt_uses_review_base_branch(
 
     status, output = fix_service.run_fix_attempt(
         "review text",
-        "gemini3pro",
+        "gemini",
         1,
         base_branch="develop",
     )
@@ -80,7 +80,7 @@ def test_run_fix_attempt_uses_review_base_branch(
 def test_run_fix_with_fallback_passes_base_branch(mock_run_fix_attempt):
     success = fix_service.run_fix_with_fallback(
         "review text",
-        "gemini3pro",
+        "gemini",
         1,
         base_branch="develop",
     )

@@ -1,3 +1,7 @@
+from pathlib import Path
+
+import pytest
+
 from multi_llm_reviewer.core import config
 
 def test_config_constants():
@@ -5,13 +9,134 @@ def test_config_constants():
     assert config.MAX_LOOPS == 5
     assert isinstance(config.REVIEWER_SLOTS, list)
     assert len(config.REVIEWER_SLOTS) > 0
-    assert "Gemini" in [s["name"] for s in config.REVIEWER_SLOTS]
+    assert all("name" in slot and "cmds" in slot for slot in config.REVIEWER_SLOTS)
 
 def test_fixer_commands_mapping():
     """修正コマンドのマッピングが定義されていることを確認する"""
-    assert "gemini3pro" in config.FIXER_COMMANDS
-    assert "copilot" in config.FIXER_COMMANDS
-    assert config.FIXER_COMMANDS["copilot"] == ["copilot", "--allow-all-tools"]
+    loaded = config.load_command_config(cwd=Path("/"), home=Path("/nonexistent"))
+    assert "gemini" in loaded["fixers"]["commands"]
+    assert "copilot" in loaded["fixers"]["commands"]
+    assert loaded["fixers"]["commands"]["copilot"] == [
+        "copilot",
+        "--silent",
+        "--no-ask-user",
+        "--allow-all-tools",
+    ]
+    assert loaded["fixers"]["commands"]["gemini"][-2:] == ["--prompt", ""]
+
+
+def _write_config(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def test_load_command_config_uses_current_non_interactive_defaults(tmp_path):
+    loaded = config.load_command_config(cwd=tmp_path, home=tmp_path / "home")
+
+    commands = {reviewer["name"]: reviewer["commands"] for reviewer in loaded["reviewers"]}
+    assert commands["Gemini"] == [
+        [
+            "gemini",
+            "--approval-mode",
+            "plan",
+            "--output-format",
+            "text",
+            "--prompt",
+            "",
+        ]
+    ]
+    assert commands["Copilot"] == [
+        [
+            "copilot",
+            "--silent",
+            "--no-ask-user",
+            "--allow-all-tools",
+            "--deny-tool=write",
+            "--deny-tool=shell",
+            "--deny-tool=url",
+        ]
+    ]
+    assert commands["Codex"] == [
+        ["codex", "exec", "--sandbox", "read-only", "--ephemeral", "-"]
+    ]
+    assert loaded["fixers"]["commands"]["codex"] == [
+        "codex",
+        "exec",
+        "--approve-for-me",
+        "--ephemeral",
+        "-",
+    ]
+
+
+def test_load_command_config_applies_user_then_repository_overrides(tmp_path):
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    nested = repo / "src" / "package"
+    (repo / ".git").mkdir(parents=True)
+    nested.mkdir(parents=True)
+
+    _write_config(
+        home / ".config" / ".multi-llm-reviewer",
+        """
+[[reviewers]]
+name = "User Reviewer"
+commands = [["user-review", "--stdin"]]
+
+[fixers.commands]
+custom = ["custom-fix"]
+""",
+    )
+    _write_config(
+        repo / ".multi-llm-reviewer",
+        """
+[[reviewers]]
+name = "Repository Reviewer"
+commands = [["repo-review", "--read-only"]]
+
+[fixers]
+order = ["custom", "codex"]
+
+[fixers.commands]
+codex = ["repo-codex", "fix"]
+""",
+    )
+
+    loaded = config.load_command_config(cwd=nested, home=home)
+
+    assert loaded["reviewers"] == [
+        {"name": "Repository Reviewer", "commands": [["repo-review", "--read-only"]]}
+    ]
+    assert loaded["fixers"]["order"] == ["custom", "codex"]
+    assert loaded["fixers"]["commands"]["custom"] == ["custom-fix"]
+    assert loaded["fixers"]["commands"]["codex"] == ["repo-codex", "fix"]
+    assert loaded["sources"] == [
+        home / ".config" / ".multi-llm-reviewer",
+        repo / ".multi-llm-reviewer",
+    ]
+
+
+@pytest.mark.parametrize(
+    "content, expected_message",
+    [
+        ('unknown = true\n', "unknown key"),
+        ('version = true\n', "version"),
+        ('[[reviewers]]\nname = "Broken"\ncommands = ["not-nested"]\n', "commands"),
+        ('[fixers]\norder = ["missing"]\n', "unknown fixer"),
+    ],
+)
+def test_load_command_config_rejects_invalid_configuration(
+    tmp_path, content, expected_message
+):
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    config_path = repo / ".multi-llm-reviewer"
+    _write_config(config_path, content)
+
+    with pytest.raises(config.ConfigError) as exc_info:
+        config.load_command_config(cwd=repo, home=tmp_path / "home")
+
+    assert str(config_path) in str(exc_info.value)
+    assert expected_message in str(exc_info.value).lower()
 
 def test_critical_path_keywords():
     """重要パスのキーワードがリストであることを確認する"""
@@ -27,7 +152,6 @@ def test_local_llm_config():
     assert isinstance(config.LOCAL_LLM_REVIEWER_SLOT, dict)
     assert "name" in config.LOCAL_LLM_REVIEWER_SLOT
     assert "cmds" in config.LOCAL_LLM_REVIEWER_SLOT
-    assert "LocalLlama3" in config.LOCAL_LLM_REVIEWER_SLOT["name"]
     assert len(config.LOCAL_LLM_REVIEWER_SLOT["cmds"]) > 0
 
     # ローカルLLM用の修正エージェントマッピング

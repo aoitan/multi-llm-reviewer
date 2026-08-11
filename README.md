@@ -49,6 +49,35 @@ Gitの差分とGitHub Issueのコンテキストを理解し、多角的な視�
 - **メモリ**: ローカルLLMを使用する場合、推奨4GB以上（llama3-7Bの場合）
 - **CPU/GPU**: OllamaがGPUを検出すると最適化され、応答速度が向上します
 
+## レビュアー／Fixer コマンドの設定
+
+外部 CLI の実行コマンドは、拡張子なしの TOML ファイルで上書きできます。
+設定は次の順に読み込まれ、後のものが優先されます。
+
+1. パッケージ組み込みの既定値
+2. ユーザー設定: `~/.config/.multi-llm-reviewer`
+3. 対象 Git リポジトリの設定: `<repo-root>/.multi-llm-reviewer`
+
+完全な記述例は [`.multi-llm-reviewer.example`](.multi-llm-reviewer.example) を参照してください。
+たとえば、リポジトリ固有のレビュアーだけに置き換える最小設定は次のとおりです。
+
+```toml
+version = 1
+
+[[reviewers]]
+name = "Repository Codex"
+commands = [
+  ["codex", "exec", "--sandbox", "read-only", "--ephemeral", "-"],
+]
+```
+
+- `reviewers` を指定すると、そのファイルより低い優先順位の reviewer 一覧をまとめて置き換えます。
+- `fixers.commands` と `local_fixers` は名前単位でマージされます。`fixers.order` は指定した一覧で置き換えます。
+- reviewer/fixer へ渡すプロンプトは常に標準入力です。標準入力を明示する必要がある CLI では、Codex の `-` のような引数も `commands` に含めてください。Gemini は headless モードを明示するため `--prompt ""` を指定し、標準入力をその prompt に追加します。
+- 不明なキー、空コマンド、存在しない fixer 名などは起動時エラーになります。CLI バイナリの存在確認や認証は各 CLI 側で行ってください。
+
+組み込み既定値はモデル名を固定せず、各 CLI の設定／現行既定モデルを使います。reviewer は Gemini の `plan`、Copilot の write/shell/url deny、Codex の `read-only` sandbox を使います。fixer はコード変更が目的のため書き込み可能な非対話モードです。特に Gemini の `yolo` と Copilot の `--allow-all-tools` は対象リポジトリ内でも強い権限を持つため、必要に応じてリポジトリ設定で制限してください。
+
 ## インストール
 
 このツールを任意のディレクトリで使用可能にするには、`uv tool` を使用してインストールします。
@@ -100,7 +129,7 @@ llm-fix
 llm-fix --fixer copilot
 
 # review 用の引数を渡す場合（-- の後に記述）
-llm-fix --fixer gemini3pro -- -b develop -i 123 --red-team
+llm-fix --fixer gemini -- -b develop -i 123 --red-team
 ```
 
 ## トラブルシューティング
@@ -116,6 +145,11 @@ llm-fix --fixer gemini3pro -- -b develop -i 123 --red-team
 
 ### レビュー内レビュー（Skills連鎖）を止めたい
 - `src/multi_llm_reviewer/core/config.py` の `DISABLE_SKILLS_IN_NESTED_REVIEW = True` を有効にしてください（デフォルト有効）。
+
+### 外部コマンド設定が読み込めない
+- ファイル名が `.multi-llm-reviewer` で、TOML として有効か確認してください。
+- リポジトリ設定は Git ルート（`.git` がある場所）に置いてください。
+- `.multi-llm-reviewer.example` と同じく、コマンドは文字列の配列で記述してください。
 
 ## ディレクトリ構造
 
