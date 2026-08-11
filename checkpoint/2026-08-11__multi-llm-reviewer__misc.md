@@ -7,3 +7,7 @@
 - 16:30 [review] act: 外部レビュー失敗後の差分限定レビューで設定環境依存テスト・version型・Gemini headless指定を修正して再レビュー完了
   evd: `uv run pytest -q` 142 passed; `uv run ruff check .` All checks passed; `git diff --check` exit 0
   block: 外部レビュアーはGemini認証確認・Copilot未認証・Codex state DB権限で結果取得不可
+
+- 16:32 [closing] act: 外部コマンド設定機能と回帰テストを専用ブランチへコミット
+  evd: commit: b04cc23
+  block: なし
