@@ -48,6 +48,8 @@ _DEFAULT_COMMAND_CONFIG = {
                     "--silent",
                     "--no-ask-user",
                     "--allow-all-tools",
+                    "--available-tools=view,glob,grep",
+                    "--disable-builtin-mcps",
                     "--deny-tool=write",
                     "--deny-tool=shell",
                     "--deny-tool=url",

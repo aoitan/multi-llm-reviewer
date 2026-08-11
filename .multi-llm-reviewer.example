@@ -11,7 +11,7 @@ commands = [
 [[reviewers]]
 name = "Copilot"
 commands = [
-  ["copilot", "--silent", "--no-ask-user", "--allow-all-tools", "--deny-tool=write", "--deny-tool=shell", "--deny-tool=url"],
+  ["copilot", "--silent", "--no-ask-user", "--allow-all-tools", "--available-tools=view,glob,grep", "--disable-builtin-mcps", "--deny-tool=write", "--deny-tool=shell", "--deny-tool=url"],
 ]
 
 [[reviewers]]

@@ -76,7 +76,7 @@ commands = [
 - reviewer/fixer へ渡すプロンプトは常に標準入力です。標準入力を明示する必要がある CLI では、Codex の `-` のような引数も `commands` に含めてください。Gemini は headless モードを明示するため `--prompt ""` を指定し、標準入力をその prompt に追加します。
 - 不明なキー、空コマンド、存在しない fixer 名などは起動時エラーになります。CLI バイナリの存在確認や認証は各 CLI 側で行ってください。
 
-組み込み既定値はモデル名を固定せず、各 CLI の設定／現行既定モデルを使います。reviewer は Gemini の `plan`、Copilot の write/shell/url deny、Codex の `read-only` sandbox を使います。fixer はコード変更が目的のため書き込み可能な非対話モードです。特に Gemini の `yolo` と Copilot の `--allow-all-tools` は対象リポジトリ内でも強い権限を持つため、必要に応じてリポジトリ設定で制限してください。
+組み込み既定値はモデル名を固定せず、各 CLI の設定／現行既定モデルを使います。reviewer は Gemini の `plan`、Copilot の view/glob/grep 限定（組み込み MCP 無効）、Codex の `read-only` sandbox を使います。fixer はコード変更が目的のため書き込み可能な非対話モードです。特に Gemini の `yolo` と Copilot fixer の `--allow-all-tools` は対象リポジトリ内でも強い権限を持つため、必要に応じてリポジトリ設定で制限してください。
 
 ## インストール
 
