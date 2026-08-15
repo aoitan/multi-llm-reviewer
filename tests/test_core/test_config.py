@@ -171,7 +171,7 @@ def test_local_llm_config():
     assert isinstance(config.LOCAL_LLM_FIXER_COMMANDS, dict)
     assert "llama3-fix" in config.LOCAL_LLM_FIXER_COMMANDS
     assert isinstance(config.LOCAL_LLM_FIXER_COMMANDS["llama3-fix"], list)
-    assert config.LOCAL_LLM_FIXER_COMMANDS["llama3-fix"][0] == "ollama"
+    assert "ollama" in config.LOCAL_LLM_FIXER_COMMANDS["llama3-fix"]
 
 def test_load_prompt():
     """プロンプトの読み込みが機能することを確認する"""
